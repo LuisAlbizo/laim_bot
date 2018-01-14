@@ -33,7 +33,7 @@ def get_thread_files(url):
     files=fsp.findAll("div",{"class":"fileText"})
     for el in files:
         current_file=el.find("a")
-        yield current_file["href"]
+        yield "http:"+current_file["href"]
 
 def main_screen():
     sp=bs(r.get(main_chan).content,"html.parser")
@@ -55,7 +55,7 @@ def main_screen():
 def get_threads(board_page):
     global actual_url
     threads={}
-    soup=bs(r.get(board_page).content)
+    soup=bs(r.get(board_page).content, "html.parser")
     board=actual_url
     tdb=soup.findAll("div",{"class":"thread"})
     i=1
@@ -83,27 +83,33 @@ def get_threads(board_page):
     return threads
 
 def display_board(threads):
-    b="```"
     for k in range(1,len(threads)+1):
+        b="```"
         t=threads[k]
-        b+="\t[idshort]:"+str(k)
-        b+=("Title: "+t["title"]+"\n"+"Info: "+t["post_info"])
-        b+=(t["file_info"])
-        b+=("Message:\n"+t["message"]+"\n"+t["replys"]+"\n")
-    return b+"```"
+        b+="\n\t[idshort]:"+str(k)
+        b+=("\nTitle: "+t["title"]+"\n"+"Info: "+t["post_info"])
+        b+=("\n"+t["file_info"])
+        b+=("\nMessage:\n"+t["message"]+"\n"+t["replys"]+"\n")
+        yield b+"```"
 
 
 def goto_board(board):
-    mm="```\nYour request: "+board
+    global Board
+    global actual_url
+    mm="```\nYour request: "+board+" "
     actual_url=Board+board
-    sp=bs(r.get(self.__actual_url).content,"html.parser")
+    req = r.get(actual_url)
+    sp=bs(req.content, "html.parser")
     mm+=(sp.find("title").text+"\n"+get_meta_info("description",sp))
-    if sp.find("title").text[:3]=="404":
-        return mm+("\n404 - back to main```")
-    threads=self.get_threads(self.__actual_url)
-    self.display_board(threads)
-    mm+=("\n\tOptions:\n[i:download by idshort]\n[m:go to main]\n[c:change current page]\n[_x:exit]```")
-
+    if req.status_code>400:
+        return {"error":True,"content":(mm+("\nOops. 404, try again :(```"))}
+    else:
+        threads=get_threads(actual_url)
+        return {"error":False , "content":[mm+"```",display_board(threads),
+            "**Type an idshort to view all images of that thread**"],
+            #"```\n\tOptions:\n[i] : download by id\n[m] : go to main\n[c] : change current page\n[x] : exit```"]
+            "threads":threads
+            }
 
 """
     opc=input("option: ")

@@ -15,10 +15,26 @@ async def on_ready():
 async def on_message(message):
     if message.content.startswith("_chan"):
         await bot.send_message(message.channel,scraper.main_screen())
-        def check(m):
-            pass
-        #msg = await bot.wait_for_message(author=message.author,timeout=10)#,check=check)
-        return
+        msg = await bot.wait_for_message(author=message.author,timeout=10)
+        if not(msg):
+            return
+        response = scraper.goto_board(msg.content.strip())
+        if response["error"]:
+            await bot.send_message(message.channel,response["content"])
+            return
+        else:
+            await bot.send_message(message.channel,response["content"][0])
+            for el in response["content"][1]:
+                await bot.send_message(message.channel,el)
+            await bot.send_message(message.channel,response["content"][2])
+            msg = await bot.wait_for_message(author=message.author,timeout=10)
+            #try:
+            ids=int(msg.content)
+            for img in scraper.get_thread_files(response["threads"][ids]["post_url"]):
+                await bot.send_message(message.channel,img)
+            return
+            #except:
+                #return
 
     elif message.content.startswith("_ping"):
         await bot.send_message(message.channel,":ping_pong: pong")
