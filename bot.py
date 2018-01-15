@@ -7,10 +7,24 @@ import bot.scraper as scraper
 import time
 
 bot = commands.Bot(command_prefix="_")
+#discord.member.utils.find(lambda m: m.id = "401391614838439936",channel.server.members)
 
 @bot.event
 async def on_ready():
     print("Bot Online")
+
+@bot.command(pass_context=True)
+async def ping(ctx):
+    print(ctx)
+    await bot.say("pong")
+
+@bot.command(pass_context=True)
+async def dank(ctx):
+    await bot.say(":joy: :ok_hand:")
+
+@bot.command(pass_context=True)
+async def fortuna(ctx):
+    await bot.say(fortunas[random.randint(0,len(fortunas)-1)])
 
 @bot.event
 async def on_message(message):
@@ -65,7 +79,7 @@ async def on_message(message):
             page = await bot.send_message(message.channel,"loading...")
             while True:
                 img = imgs[i]
-                await bot.edit_message(page,(("image %i of %i\n" % (i+1,len(imgs)-1))+img))
+                await bot.edit_message(page,(("image %i of %i\n" % (i+1,len(imgs)))+img))
                 if i>0:
                     await bot.add_reaction(page,"\u25C0")#anterior
                 if i<len(imgs)-1:
@@ -74,14 +88,23 @@ async def on_message(message):
                 await bot.add_reaction(page,"\u274E")#quitar
                 opc = await bot.wait_for_reaction(
                         ["\u25C0","\u25B6","\u2611","\u274E"],user=message.author,message=page,timeout=15)
-                print(opc)
                 if not(opc):
                     for emoji in ["\u25C0","\u25B6","\u2611","\u274E"]:
-                        await bot.remove_reaction(page,emoji,message.author)
+                        try:
+                            await bot.remove_reaction(page,emoji,
+                                discord.member.utils.find(lambda m: m.id == "401391614838439936",
+                                    message.channel.server.members
+                                    )
+                                )
+                        except:
+                            pass
                     return
                 else:
                     emoji=opc.reaction.emoji
-                    await bot.remove_reaction(page,emoji,message.author)
+                    try:
+                        await bot.remove_reaction(page,emoji,message.author)
+                    except:
+                        pass
                     if emoji=="\u25C0":
                         i=i-1
                         pass
@@ -90,21 +113,21 @@ async def on_message(message):
                         pass
                     elif emoji=="\u2611":
                         for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
-                            await bot.remove_reaction(page,e)
+                            try:
+                                await bot.remove_reaction(page,e,
+                                    discord.member.utils.find(lambda m: m.id == "401391614838439936",
+                                        message.channel.server.members
+                                        )
+                                    )
+                            except:
+                                pass
                         return
                     elif emoji=="\u274E":
                         await bot.delete_message(page)
                         return
             return
-            #except:
 
-    elif message.content.startswith("_ping"):
-        await bot.send_message(message.channel,":ping_pong: pong")
-    
-    elif message.content.startswith("_fortuna"):
-        await bot.send_message(message.channel,fortunas[random.randint(0,len(fortunas)-1)])
+    await bot.process_commands(message) 
 
-    else:
-        return
 
 #Luis Albizo 13/01/18
