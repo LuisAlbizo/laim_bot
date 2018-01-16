@@ -5,9 +5,13 @@ import random
 from .fortunas import fortunas
 import bot.scraper as scraper
 import time
+import sqlite3
+import re
+import datetime
 
 bot = commands.Bot(command_prefix="_")
 #discord.member.utils.find(lambda m: m.id = "401391614838439936",channel.server.members)
+dbf = "bot/files/laim.db"
 
 @bot.event
 async def on_ready():
@@ -15,8 +19,19 @@ async def on_ready():
 
 @bot.command(pass_context=True)
 async def ping(ctx):
-    print(ctx)
-    await bot.say("pong")
+    now = datetime.datetime.utcnow()
+    delta = now-ctx.message.timestamp
+    await bot.say(':ping_pong: Pong   ``%ims``' % delta.microseconds)
+
+@bot.command(pass_context=True)
+async def quien(ctx):
+    m=list(ctx.message.server.members)
+    m=m[random.randint(0,len(m)-1)]
+    await bot.say("%s %s" % (m.name,ctx.message.content[7:]))
+
+@bot.command(pass_context=True)
+async def siono(ctx):
+    await bot.say(random.choice(["Cy","\xf1o"]))
 
 @bot.command(pass_context=True)
 async def dank(ctx):
@@ -25,6 +40,65 @@ async def dank(ctx):
 @bot.command(pass_context=True)
 async def fortuna(ctx):
     await bot.say(fortunas[random.randint(0,len(fortunas)-1)])
+
+@bot.command(pass_context=True)
+async def tag(ctx):
+    cmd = re.compile(r"_tag (?P<tag>\w+) ?(?P<content>.*)")
+    t = cmd.match(ctx.message.content)
+    if t:
+        db = sqlite3.connect(dbf)
+        if t.groupdict()["content"] == "*delete":
+            cur = db.execute("SELECT user FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
+            try:
+                user = next(cur)[0]
+                if int(ctx.message.author.id) == user:
+                    db.execute("DELETE FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
+                    db.commit()
+                    await bot.say("Tag '%s' eliminado correctamente" % t.groupdict()["tag"])
+                else:
+                    await bot.say("Tu no puedes eliminar este tag")
+            except:
+                await bot.say("Ese tag ni existe we")
+        elif t.groupdict()["content"]:
+            cur = db.execute("SELECT user FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
+            try:
+                user = next(cur)[0]
+                if int(ctx.message.author.id) == user:
+                    db.execute("UPDATE Tags SET content = '%s' WHERE tag IS '%s'" % (
+                        t.groupdict()["content"],
+                        t.groupdict()["tag"]
+                        )
+                    )
+                    db.commit()
+                    await bot.say("Tag '%s' actualizado correctamente" % t.groupdict()["tag"])
+                else:
+                    await bot.say("Tu no puedes actualizar este tag")
+            except:
+                db.execute("INSERT INTO Tags VALUES ('%s','%s',%i)" % (
+                    t.groupdict()["tag"],
+                    t.groupdict()["content"],
+                    int(ctx.message.author.id)
+                    )
+                )
+                db.commit()
+                await bot.say("Tag '%s' creado correctamente." % t.groupdict()["tag"])
+        else:
+            cur = db.execute("SELECT content FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
+            try:
+                content = next(cur)[0]
+                await bot.say(content)
+                cur.close()
+            except:
+                await bot.say("No existe el tag '%s'" % t.groupdict()["tag"])
+        db.close()
+    else:
+        await bot.say("""No, asi mo funciona
+            ```
+Usa '_tag test Hola Mundo' para crear o actualizar un tag
+Usa '_tag test' para ver el contenido de un tag
+Usa '_tag test *delete' para borrar un tag
+            ```
+            """)
 
 @bot.event
 async def on_message(message):
@@ -126,7 +200,11 @@ async def on_message(message):
                         await bot.delete_message(page)
                         return
             return
-
+    elif message.content.startswith("_/amigos/"):
+        with open('bot/files/amigos2017final.png', 'rb') as f:
+            await bot.send_file(message.channel, f)
+            f.close()
+    
     await bot.process_commands(message) 
 
 
