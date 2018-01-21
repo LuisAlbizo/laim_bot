@@ -1,21 +1,18 @@
-import discord
+import discord, async, random, time, sqlite3, re, datetime, os
 from discord.ext import commands
-import async
-import random
 from .fortunas import fortunas
 import bot.scraper as scraper
-import time
-import sqlite3
-import re
-import datetime
 
 bot = commands.Bot(command_prefix="_")
 #discord.member.utils.find(lambda m: m.id = "401391614838439936",channel.server.members)
 dbf = "bot/files/laim.db"
+init_time = None
 
 @bot.event
 async def on_ready():
+    global init_time
     print("Bot Online")
+    init_time = int(time.time())
 
 @bot.command(pass_context=True)
 async def ping(ctx):
@@ -24,10 +21,52 @@ async def ping(ctx):
     await bot.say(':ping_pong: Pong   ``%ims``' % delta.microseconds)
 
 @bot.command(pass_context=True)
+async def test(ctx):
+    global init_time
+    present_time = int(time.time())
+    running_time = present_time - init_time
+    dias = 0
+    horas = 0
+    minutos = 0
+    segundos = running_time
+    while segundos >= 60:
+        minutos+=1
+        segundos-=60
+    while minutos >= 60:
+        horas+=1
+        minutos-=60
+    while horas >= 24:
+        dias+=1
+        horas-=24
+    await bot.say("Bot corriendo desde hace %i dias %i horas %i minutos y %i segundos :)" % (
+        dias,
+        horas,
+        minutos,
+        segundos
+        )
+    )
+
+@bot.command(pass_context=True)
+async def echo(ctx):
+    await bot.say(ctx.message.content[6:])
+
+@bot.command(pass_context=True)
 async def quien(ctx):
-    m=list(ctx.message.server.members)
-    m=m[random.randint(0,len(m)-1)]
-    await bot.say("%s %s" % (m.name,ctx.message.content[7:]))
+    cmd = re.compile(r"_quien")
+    def randomMember():
+        mem=list(ctx.message.server.members)
+        return mem[random.randint(0,len(mem)-1)]
+    m=""
+    for el in cmd.split(ctx.message.content+" "):
+        if el:
+            m=m+randomMember().name+el
+    await bot.say(m)
+
+@bot.command(pass_context=True)
+async def ss(ctx):
+    with open("bot/files/ss/"+random.choice(os.listdir("bot/files/ss")), "rb") as f:
+        await bot.send_file(ctx.message.channel,f)
+        f.close()
 
 @bot.command(pass_context=True)
 async def siono(ctx):
@@ -92,7 +131,7 @@ async def tag(ctx):
                 await bot.say("No existe el tag '%s'" % t.groupdict()["tag"])
         db.close()
     else:
-        await bot.say("""No, asi mo funciona
+        await bot.say("""No, asi no funciona
             ```
 Usa '_tag test Hola Mundo' para crear o actualizar un tag
 Usa '_tag test' para ver el contenido de un tag
@@ -104,8 +143,9 @@ Usa '_tag test *delete' para borrar un tag
 async def on_message(message):
     if message.content.startswith("_chan"):
         fm = await bot.send_message(message.channel,scraper.main_screen())
-        msg = await bot.wait_for_message(author=message.author,timeout=15)
+        msg = await bot.wait_for_message(author=message.author,timeout=15,check=lambda c: c.content[0]=='/')
         if not(msg):
+            await bot.delete_message(fm)
             return
         await bot.delete_message(fm)
         response = scraper.goto_board(msg.content.strip())
@@ -129,7 +169,6 @@ async def on_message(message):
                 await bot.add_reaction(page,"\u274E")#quitar
                 opc = await bot.wait_for_reaction(
                         ["\u25C0","\u25B6","\u2611","\u274E"],user=message.author,message=page,timeout=15)
-                print(opc)
                 if not(opc):
                     await bot.delete_message(fm)
                     await bot.delete_message(page)
