@@ -94,9 +94,7 @@ fortunas = [
 "El mejor dia de tu vida ya fue, pero el peor aun no ;)",
 "Te enamorarás de una puta",
 "Te adoptará una manada de lobos",
-"Rha te baneará y en su proceso borrará un canal aleatorio",
-"Tobillos intentará baitearte pero fallara",
-"Serás el presidente de un país tercermundista."
+"Serás el presidente de un país tercermundista.",
 "Crearás un meme que morirá a los pocos días de su nacimiento.",
 "Tendrás sueños lucidos donde eres del sexo opuesto y cumples tus fantasías.",
 "En tu proxima vida serás abortado.",
@@ -106,6 +104,11 @@ fortunas = [
 "Te doxxearan y postearan fotos donde estás desnudo a tus padres. ",
 "Serás el sujeto de prueba en un experimento para tratar el cáncer de mama.",
 "Tu mama es hombre",
-"Te convertirás en un Pillar Men"
+"Te convertirás en un Pillar Men",
+"Te enamorarás de alguien por internet y te darás cuenta de que se trata de tu mamá",
+"Uno de los usuarios premium desea mamarte el guebo en secreto",
+"Magikarp salpico, pero no ocurrio nada...",
 
+"Rha te baneará y en su proceso borrará un canal aleatorio",
+"Tobillos intentará baitearte pero fallara"
 ]
