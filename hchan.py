@@ -32,8 +32,8 @@ def get_threads(board_page):
         message=op.find("blockquote").text
         threads[i]={"post_id":postid,"post_info":post_info,"post_url":postid}
         threads[i]["title"]=title_thread
-        threads[i]["message"]="\n".join(filter(lambda s: bool(s),message.split("\n")))
-        threads[i]["replys"]=replys
+        threads[i]["message"]="".join(filter(lambda s: bool(s),"\n".join(filter(lambda s: bool(s),message.split('\n'))).split('\r')))
+        threads[i]["replys"]="\n"+" ".join(filter(lambda s: bool(s),replys.split('\n')))
         i+=1
     return threads
 
