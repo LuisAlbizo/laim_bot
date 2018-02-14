@@ -1,4 +1,4 @@
-import time,pickle,base64,sqlite3
+import time,pickle,base64,sqlite3,math
 
 MINUTO = 60
 HORA = 60*MINUTO
@@ -13,12 +13,11 @@ def makeID(db):
         d=next(cur)
         cur.close()
         idd=d[0]
-        a.execute("UPDATE Cont SET Ocupado = 1 WHERE ID IS "+idd)
+        a.execute("UPDATE Cont SET Ocupado = 1 WHERE ID IS "+str(idd))
         a.commit()
     except StopIteration:
         cur=a.execute("SELECT MAX(ID) FROM Cont")
         b=list(cur)
-        print(b)
         if b[0][0]:
             idd=b[0][0]+1
             a.execute("INSERT INTO Cont VALUES(%i,1)" % idd)
@@ -29,6 +28,12 @@ def makeID(db):
             a.commit()
     a.close()
     return idd
+
+def deleteID(ID,db):
+    a=sqlite3.connect(db)
+    a.execute("UPDATE Cont SET Ocupado = 0 WHERE ID IS "+str(ID))
+    a.commit()
+    a.close()
 
 class TBanco:
     def __init__(self,db):
@@ -70,7 +75,30 @@ class TBanco:
             cursor.close()
             db_accounts.close()
             return None
-
+'''
+    def obtenerCuentas(self,page=1,pagesize=20):
+        if page<=0:
+            return {"error":True,"error_message":"Pagina "+str(page)+" fuera de rango"}
+        db_accounts=sqlite3.connect(self.__cuentas_db)
+        cursor=db_accounts.execute("SELECT Account_data FROM Accounts")
+        npages=(lambda a,b:int(a/b)+1 if a%b else int(a/b))(cursor.count(),pagesize)
+        cursor=cursor.skip((page-1)*pagesize)
+        if not(cursor.count()):
+            conn.close()
+            return {"error":True,"error_message":"Pagina "+str(page)+" fuera de rango"}
+        cuentas=[DecodeObject(cuenta['account_data']).__json__() for cuenta in cursor.limit(pagesize)]
+        last_page=False
+        if len(cuentas)<pagesize or cursor.count()==pagesize:
+            last_page=True
+        conn.close()
+        return {
+            "error" : False,
+            "cuentas" : cuentas,
+            "page" : page,
+            "last_page" : last_page,
+            "npages" : npages
+        }
+'''
 class Actualizadora:
     """docstring for Actualizadora"""
     def __init__(self,cuenta,db_name):
@@ -86,7 +114,7 @@ class Actualizadora:
                 )
             db_accounts.commit()
             db_accounts.close()
-            return r
+            return [deleteID(m.getID(),self.__db_name) for m in r]
         return actualizarCuenta
 
 class TMoneda:
@@ -96,7 +124,7 @@ class TMoneda:
         self.__emision=int(time.time())
         self.__duracion=duracion
         self.__valor=valor
-        if not((self.__valor in [1,10,100,1000,10000]) and (self.__duracion>=MINUTO)):
+        if not(math.log10(self.__valor).is_integer() and (self.__duracion>=MINUTO)):
             raise Exception("Datos de la moneda invalidos")
 
     def consultarExpiracion(self):
@@ -134,6 +162,9 @@ class TCuenta:
 
     #Funciones de consulta de saldo y modificacion de saldo
 
+    def getCreacion(self):
+        return self.__creacion
+
     def getSaldo(self,que="_"):
         if que.lower()=="valor":
             return self.__saldo_valor
@@ -143,23 +174,27 @@ class TCuenta:
             return {"valor":self.__saldo_valor,"monedas":self.__saldo_monedas}
 
     def agregarMoneda(self,moneda):
-        if moneda.consultarExpiracion()>0:
-            self.__saldo_monedas.append(moneda)
-            return True
-        else:
-            return False
+        self.__saldo_monedas.append(moneda)
+    
+    def eliminarMoneda(self,idmoneda):
+        for m in self.__saldo_monedas:
+            if m.getID()==idmoneda:
+                self.__saldo_monedas.remove(m)
+                return True
+
+    def obtenerMoneda(self,idmoneda):
+        for m in self.__saldo_monedas:
+            if m.getID()==idmoneda:
+                return m
 
     def actualizarSaldo(self):
-        try:
-            @self.__actualizadora
-            def actualizar():
-                self.__saldo_monedas = list(filter(lambda moneda:moneda.consultarExpiracion()>0,self.__saldo_monedas))
-                self.__saldo_valor = sum([moneda.consultarValor() for moneda in self.__saldo_monedas])
-        except:
-            def actualizar():
-                self.__saldo_monedas = list(filter(lambda moneda:moneda.consultarExpiracion()>0,self.__saldo_monedas))
-                self.__saldo_valor = sum([moneda.consultarValor() for moneda in self.__saldo_monedas])
-        actualizar()
+        @self.__actualizadora
+        def actualizar():
+            d=filter(lambda moneda:moneda.consultarExpiracion()<0,self.__saldo_monedas)
+            self.__saldo_monedas = list(filter(lambda moneda:moneda.consultarExpiracion()>0,self.__saldo_monedas))
+            self.__saldo_valor = sum([moneda.consultarValor() for moneda in self.__saldo_monedas])
+            return d
+        return actualizar()
 
     #--rango = tupla (int limite_inferior,int limite_superior) - (si el limite_inferior es mayor que el limite_superior entonces
     #se retornaran todas las monedas que no esten dentro del rango (limite_superior,limite_inferior))
@@ -191,23 +226,9 @@ class TCuenta:
             "saldo_monedas":[moneda.__json__() for moneda in self.getSaldo("monedas")]
         }
 
-def TCambio(monedas,modo,evaluar):
-    new_monedas=monedas
-    if modo=="div":
-        if evaluar=="exp":
-            pass
-        elif evaluar=="val":
-            pass
-    elif modo=="mul":
-        if evaluar=="exp":
-            pass
-        elif evaluar=="val":
-            pass
-    return new_monedas
-
-def TCambioS(moneda,modo):
+def TCambio(moneda,modo):
     m=moneda.__json__()
-    idd=m['id']
+    idd=m['ID']
     if modo=="t":
         if m["valor"]>=10:
             return (True,TMoneda(m["valor"]/10,m["expiracion"]*2,idd))
@@ -221,31 +242,55 @@ def TCambioS(moneda,modo):
     else:
         return (False,"Opcion invalida")
 
-def FusionMonedas(monedas,db):
+def FusionarMonedas(monedas,ID):
     if len(monedas)==2:
         if monedas[0].consultarValor()!=monedas[1].consultarValor():
             return None
         return TMoneda(
             monedas[0].consultarValor(),
             monedas[0].consultarExpiracion()+monedas[1].consultarExpiracion(),
-            makeID(db)
+            ID
         )
     else:
         try:
             return TMoneda(
                 monedas[0].consultarValor(),
-                monedas[0].consultarExpiracion()+FusionarMonedas(monedas[1:],db).consultarExpiracion(),
-                None
+                monedas[0].consultarExpiracion()+FusionarMonedas(monedas[1:],ID).consultarExpiracion(),
+                ID
             )
         except:
-            return None
+           return None
 
+def DividirMoneda(moneda,db,d=2):
+    ex=moneda.consultarExpiracion()
+    divs=[]
+    if ex>MINUTO*d:
+        deleteID(moneda.getID(),db)
+        for el in range(d):
+            divs.append(banco.TMoneda(moneda.consultarValor(),int(ex/d),makeID(db)))
+    return divs
 
+def ClonarMoneda(moneda):
+    return TMoneda(moneda.consultarValor(),moneda.consultarExpiracion(),-1)
 
-
-
-
-
+def paginarMonedas(cuenta,page,pagesize=20):
+	if page<=0:
+		return {"error":True,"error_message":"Pagina "+str(page)+" fuera de rango"}
+	elif (page-1)*pagesize>len(cuenta.getSaldo('monedas')):
+		return {"error":True,"error_message":"Pagina "+str(page)+" fuera de rango"}
+	else:
+		if (page)*pagesize>=len(cuenta.getSaldo('monedas')):
+			return {
+				"error":False,
+				"last_page":True,
+				"monedas":cuenta.getSaldo("monedas")[((page-1)*20):]
+			}
+		else:
+			return {
+				"error":False,
+				"last_page":False,
+				"monedas":cuenta.getSaldo("monedas")[((page-1)*20):((page)*20)]
+			}
 
 
 
