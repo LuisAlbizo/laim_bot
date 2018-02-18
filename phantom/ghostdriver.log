@@ -1,0 +1,17 @@
+libEGL warning: GLX/DRI2 is not supported
+libEGL warning: DRI2: failed to open swrast (search paths /usr/lib/arm-linux-gnueabihf/dri:${ORIGIN}/dri:/usr/lib/dri)
+[INFO  - 2018-02-18T00:20:37.009Z] GhostDriver - Main - running on port 50584
+[INFO  - 2018-02-18T00:20:37.356Z] Session [8b106f60-1441-11e8-afea-0bebd07716dc] - page.settings - {"XSSAuditingEnabled":false,"javascriptCanCloseWindows":true,"javascriptCanOpenWindows":true,"javascriptEnabled":true,"loadImages":true,"localToRemoteUrlAccessEnabled":false,"userAgent":"Mozilla/5.0 (X11; Linux) AppleWebKit/538.1 (KHTML, like Gecko) PhantomJS/2.1.1 Safari/538.1"}
+[INFO  - 2018-02-18T00:20:37.356Z] Session [8b106f60-1441-11e8-afea-0bebd07716dc] - page.customHeaders:  - {}
+[INFO  - 2018-02-18T00:20:37.357Z] Session [8b106f60-1441-11e8-afea-0bebd07716dc] - Session.negotiatedCapabilities - {"browserName":"phantomjs","version":"2.1.1","driverName":"ghostdriver","driverVersion":"1.2.0","platform":"linux-unknown-32bit","javascriptEnabled":true,"takesScreenshot":true,"handlesAlerts":false,"databaseEnabled":false,"locationContextEnabled":false,"applicationCacheEnabled":false,"browserConnectionEnabled":false,"cssSelectorsEnabled":true,"webStorageEnabled":false,"rotatable":false,"acceptSslCerts":false,"nativeEvents":true,"proxy":{"proxyType":"direct"}}
+[INFO  - 2018-02-18T00:20:37.357Z] SessionManagerReqHand - _postNewSessionCommand - New Session Created: 8b106f60-1441-11e8-afea-0bebd07716dc
+[INFO  - 2018-02-18T00:25:37.015Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T00:30:37.015Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T00:35:37.015Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T00:40:37.155Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T00:46:41.143Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T00:51:41.146Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T00:56:41.147Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T01:01:41.553Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T01:06:41.554Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW
+[INFO  - 2018-02-18T01:11:41.559Z] SessionManagerReqHand - _cleanupWindowlessSessions - Asynchronous Sessions clean-up phase starting NOW

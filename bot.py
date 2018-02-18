@@ -1,4 +1,5 @@
-import discord, async, random, time, sqlite3, re, datetime, os, threading, math, asyncio
+import discord, async, random, time, sqlite3, re, datetime, os, threading, math, asyncio, socket, hashlib
+import base64
 from discord.ext import commands
 from .fortunas import fortunas
 from functools import reduce
@@ -31,6 +32,7 @@ def segundosV(segundos):
 
 #Bot
 bot = commands.Bot(command_prefix="_")
+dirbot = "/sdcard/practicas/python/discord/laimbot/bot/"
 dbf = "bot/files/laim.db"
 dbt = "bot/files/laimtest.db"
 bank = banco.TBanco(dbt)
@@ -133,6 +135,59 @@ async def fortuna(ctx):
         await bot.say(fortunas[random.randint(0,len(fortunas)-1)])
         return
     await bot.say(fortunas[random.randint(0,len(fortunas)-3)])
+
+
+@bot.command(pass_context=True)
+async def screenshot(ctx):
+    """_screenshot <url> (la url de la pagina a tomar screenshot)"""
+    url=re.compile(r"_screenshot (?P<url>.+)")
+    url=url.match(ctx.message.content)
+    if not(url):
+        return await bot.say("Usa _help screenshot")
+    url=url.groupdict()["url"]
+    if len(url)>300:
+        return await bot.say("No puedes usar mas de 300 caracteres")
+    conn = socket.socket()
+    try:
+        conn.connect(("127.0.0.1",4300))
+    except:
+        return await bot.say("Servicio no disponible ;_;")
+    idph = eval("0x"+hashlib.sha1(("%s %s" % (ctx.message.author.name,url)).encode()).hexdigest())
+    os.system("mkdir %sfiles/ph/%i" % (dirbot,idph))
+    conn.send(("ss %s %sfiles/ph/%i/screenshot.png" % (
+            base64.b64encode(url.encode()).decode(),
+            dirbot,
+            idph
+        )).encode()
+    )
+    resp = conn.recv(1024).decode().split(":")
+    conn.close()
+    if resp[0]=="succes":
+        with open("%sfiles/ph/%i/screenshot.png" % (dirbot,idph),"rb") as f:
+            await bot.send_file(ctx.message.channel,f)
+            f.close()
+    else:
+        await bot.say("Error: "+resp[1])
+    os.system("rm -r %sfiles/ph/%i/" % (dirbot,idph))
+
+@bot.command(pass_context=True)
+async def meme(ctx):
+    """
+    Comando para hacer memes frescos.
+
+    _meme top text|bottom text
+    (incluye la imagen en tu mensaje)
+    _meme https://www.ejemplo.com/imagen.jpg top|bottom
+    (o el link)
+
+    Para personalizar mas el resultado
+    _meme test[[color: #f9a; font-size: 50px]]|test2[[color:#456; margin-bottom: 80px]] {{width: 500px; height: 700px;}}
+    Despues del texto entre dobles corchetes cuadrados ([[]]) escribe estilo css
+    Y despues de ambos textos escribe entre dobles corchetes ({{}}) estilo css para el meme en general
+
+    """
+    pass
+
 
 @bot.command(pass_context=True)
 async def chan(ctx):
@@ -822,7 +877,7 @@ async def dividir(ctx):
     Ejemplo:
         _dividir FF:FA:1A:10
     """
-    ids = re.compile(r"_dividir (?P<ids>([0-9A-Fa-f]{1,6}:?)+)")
+    ids = re.compile(r"_dividir (?P<ids>([0-9A-Fa-f]{1,6}:?)+) ?(?P<div>\d+)")
     match = ids.match(ctx.message.content)
     if match:
         ids=ids.groupdict()["ids"]
