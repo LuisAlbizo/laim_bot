@@ -1,0 +1,22 @@
+body {
+	background-image: url("../imagenes/anime_girl02.gif");
+	background-repeat: repeat-y;
+	background-size:100vw;
+}
+
+h1 {
+	color: #42439d;
+	width: 80%;
+	margin: auto;
+	text-align:center;
+	font-size: 80px;
+}
+
+p {
+	font-weight: bold;
+	text-align: center;
+	margin-top:200px;
+	font-size: 50px;
+	color: rgb(200,40,40);
+}
+

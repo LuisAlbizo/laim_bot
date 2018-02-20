@@ -1,8 +1,9 @@
 import discord, async, random, time, sqlite3, re, datetime, os, threading, math, asyncio, socket, hashlib
-import base64
+import base64, pickle
 from discord.ext import commands
 from .fortunas import fortunas
 from functools import reduce
+from bot.banco import DIA, HORA, MINUTO
 import bot.scraper as scraper
 import bot.hchan as hchan
 import bot.banco as banco
@@ -136,7 +137,6 @@ async def fortuna(ctx):
         return
     await bot.say(fortunas[random.randint(0,len(fortunas)-3)])
 
-
 @bot.command(pass_context=True)
 async def screenshot(ctx):
     """_screenshot <url> (la url de la pagina a tomar screenshot)"""
@@ -186,8 +186,51 @@ async def meme(ctx):
     Y despues de ambos textos escribe entre dobles corchetes ({{}}) estilo css para el meme en general
 
     """
-    pass
-
+    memeparser = re.compile("_meme ?(?P<url>https?://.+\\.[a-z]{1,8})?(?P<top>[a-zA-Z0-9\\-\\(\\)/_.,+:;'!?<> ]+)(?P<css1>\\[\\[.*\\]\\])?\\|(?P<bottom>[a-zA-Z0-9\\-()_.,+:;'!?<> ]+)(?P<css2>\\[\\[.*\\]\\])? ?(?P<css3>\\{\\{.*\\}\\})?")
+    params = memeparser.match(ctx.message.content)
+    if not(params):
+        memeparser = re.compile('_meme (?P<top>.*)')
+        params = memeparser.match(ctx.message.content)
+        params = params.groupdict()
+        params['bottom'] = ' '
+        if not(params):
+            return await bot.say("Formato incorrecto :( usa _help meme")
+    else:
+        params = params.groupdict()
+        keys = []
+        css = {}
+        for k in params:
+            if not(params[k]):
+                keys.append(k)
+            elif k[:3] == 'css':
+                params[k] = base64.b16encode(params[k].encode()).decode()
+        [params.pop(k) for k in keys]
+    if ctx.message.attachments:
+        print('si')
+        params['url'] = ctx.message.attachments[0]['url']
+    conn = socket.socket()
+    try:
+        conn.connect(("127.0.0.1",4300))
+    except:
+        return await bot.say("Servicio no disponible ;_;")
+    idph = eval("0x"+hashlib.sha1(("%s %s" % (
+        ctx.message.author.name,ctx.message.timestamp)).encode()).hexdigest())
+    os.system("mkdir %sfiles/ph/%i" % (dirbot,idph))
+    conn.send(("meme %s %sfiles/ph/%i/meme.png" % (
+            base64.b64encode(pickle.dumps(params)).decode(),
+            dirbot,
+            idph
+        )).encode()
+    )
+    resp = conn.recv(1024).decode().split(":")
+    conn.close()
+    if resp[0]=="succes":
+        with open("%sfiles/ph/%i/meme.png" % (dirbot,idph),"rb") as f:
+            await bot.send_file(ctx.message.channel,f)
+            f.close()
+    else:
+        await bot.say("Error: "+resp[1])
+    os.system("rm -r %sfiles/ph/%i/" % (dirbot,idph))
 
 @bot.command(pass_context=True)
 async def chan(ctx):
@@ -826,6 +869,62 @@ async def cuenta(ctx):
     await bot.say(":".join([hex(m.getID())[2:].upper() for m in monedas]))
 
 @bot.command(pass_context=True)
+async def perfil(ctx):
+    """Help"""
+    mention = re.search(r"<@\d{18}>",ctx.message.content)
+    if mention:
+        mention = mention.group()
+        user = discord.member.utils.find(lambda m: m.id == mention[2:-1],
+            ctx.message.channel.server.members
+        )
+        if user:
+            cuenta=bank.obtenerCuenta(int(mention[2:-1]))
+            if not(cuenta):
+                return await bot.say("El usuario no tiene cuenta")
+        else:
+            return await bot.say("Usuario no encontrado")
+    else:
+        mention=ctx.message.author.mention
+        cuenta=bank.obtenerCuenta(int(ctx.message.author.id))
+        if not(cuenta):
+            return await bot.say("Primero crea una cuenta con _reward")
+    conn = socket.socket()
+    try:
+        conn.connect(("127.0.0.1",4300))
+    except:
+        return await bot.say("Servicio no disponible ;_;")
+    idph = eval("0x"+hashlib.sha1(("%s %s" % (
+        ctx.message.author.name,ctx.message.timestamp)).encode()).hexdigest())
+    os.system("mkdir %sfiles/ph/%i" % (dirbot,idph))
+    pkfile = "%sfiles/ph/%i/%i.pk" % (dirbot,idph,cuenta.getID())
+    cuenta.actualizarSaldo()
+    info = {
+        "timestamp" : str(ctx.message.timestamp).split('.')[0],
+        "cuenta" : cuenta.__json__(),
+        "id" : cuenta.getID(),
+        "username" : ctx.message.author.name,
+        "avatar" : ctx.message.author.avatar_url
+    }
+    with open(pkfile,'wb') as pkf:
+        pickle.dump(info,pkf)
+        pkf.close()
+    conn.send(("profile %s %sfiles/ph/%i/profile.png" % (
+            base64.b64encode(pkfile.encode()).decode(),
+            dirbot,
+            idph
+        )).encode()
+    )
+    resp = conn.recv(1024).decode().split(":")
+    conn.close()
+    if resp[0]=="succes":
+        with open(resp[1],"rb") as f:
+            await bot.send_file(ctx.message.channel,f)
+            f.close()
+    else:
+        await bot.say("Error: "+resp[1])
+    #os.system("rm -r %sfiles/ph/%i/" % (dirbot,idph))
+
+@bot.command(pass_context=True)
 async def juntar(ctx):
     """
     Comando para fusionar monedas
@@ -843,7 +942,6 @@ async def juntar(ctx):
     else:
         return await bot.say("Formato incorrecto, usa _help juntar")
     cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
-    print(ids)
     if not(cuenta):
         return await bot.say("Primero crea una cuenta con _reward")
     monedas = [cuenta.obtenerMoneda(eval("0x"+str(mid))) for mid in ids]
@@ -883,6 +981,60 @@ async def dividir(ctx):
         ids=ids.groupdict()["ids"]
     else:
         return await bot.say("Formato incorrecto, usa _help dividir")
+
+@bot.command(pass_context=True)
+async def extraer(ctx):
+    """
+    Comando para extraer tiempo de una moneda
+
+    Ejemplo:
+        _extraer FF 3*HORA
+
+    Esto extrae una moneda de duracion de 3 horas y el mismo valor que FF, restandole a FF 3 horas de tiempo
+    FF debe durar mas tiempo del que quieres extraer
+
+    Por defecto el numero que escribas seran segundos, pero puedes multiplicar los segundos con estas variables:
+        DIA
+        HORA
+        MINUTO 
+
+    y debes usar el operador '*' que sirve como multiplicador
+
+    """
+    ex = re.compile(r"_extraer (?P<id>[0-9A-Fa-f]{1,6}) (?P<evaluar>\d+\*?[a-zA-Z]*)")
+    match = ex.match(ctx.message.content)
+    if match:
+        ex=match.groupdict()
+    else:
+        return await bot.say("Formato incorrecto, usa _help extraer")
+    cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
+    if not(cuenta):
+        return await bot.say("Primero crea una cuenta con _reward")
+    moneda = cuenta.obtenerMoneda(eval('0x'+ex['id']))
+    if not(moneda):
+        return await bot.say("La moneda %s no te pertenece" % ex['id'].upper())
+    try:
+        dur = eval(ex['evaluar'].upper())
+    except NameError:
+        return await bot.say("Variable desconocida: "+ex['evaluar'])
+    ext = banco.ExtraerMoneda(moneda,dbt,dur)
+    if ext[0]:
+        cuenta.eliminarMoneda(moneda.getID())
+        cuenta.agregarMoneda(ext[1])
+        cuenta.agregarMoneda(ext[2])
+        for m in [ext[1],ext[2]]:
+            m = m.__json__()
+            s=segundosV(m["expiracion"])
+            await bot.say(
+                "\n```\nNueva %s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
+                hex(m["ID"])[2:].upper(),
+                s["dias"],s["horas"],s["minutos"],
+                m["valor"]
+                )
+            )
+        cuenta.actualizarSaldo()
+    else:
+        await bot.say('No se puede extraer esa cantidad de tiempo')
 
 #Comandos para juego
 
@@ -1006,7 +1158,7 @@ async def blackjack(ctx):
                     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
                         len(monedas),nmoneda.consultarExpiracion()/60/60
                     ))
-            if j.valores[dealer["cartas"][0][0]]==[10]:
+            if j.valores[dealer["cartas"][1][0]]==[10]:
                 if seguro:
                     monedas+=[banco.ClonarMoneda(nmoneda) for i in range(apuestc*2)]
                     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
@@ -1045,7 +1197,7 @@ async def blackjack(ctx):
                 len(monedas),nmoneda.consultarExpiracion()/60/60
             ))
             jugador = j.bjpedir(jugador,rp)
-            playercards=", ".join([card.split(" ")[1] for card in jugador["cartas"]])
+            playercards=", ".join(jugador["cartas"])
             playervalor=j.bjvalor(jugador)
             playercards = "{%s (%i)}" % (playercards,playervalor)
             opc = playercards.join(re.split(r"\{[^\}]+\}",opc))
@@ -1061,7 +1213,7 @@ async def blackjack(ctx):
                     len(monedas),monedas[0].consultarExpiracion()/60/60
                 ))
                 jugador = j.bjpedir(jugador,rp)
-                playercards=", ".join([card.split(" ")[1] for card in jugador["cartas"]])
+                playercards=", ".join(jugador["cartas"])
                 playervalor=j.bjvalor(jugador)
                 playercards = "{%s (%i)}" % (playercards,playervalor)
                 await bot.edit_message(ronda,playercards.join(re.split(r"\{[^\}]+\}",opc))+"\n```")
@@ -1077,7 +1229,7 @@ async def blackjack(ctx):
         elif opcion == "pedir":
             while True:
                 jugador=j.bjpedir(jugador,rp)
-                playercards=", ".join([card.split(" ")[1] for card in jugador["cartas"]])
+                playercards=", ".join(jugador["cartas"])
                 playervalor=j.bjvalor(jugador)
                 playercards = "{%s (%i)}" % (playercards,playervalor)
                 opc = playercards.join(re.split(r"\{[^\}]+\}",opc))
@@ -1102,8 +1254,8 @@ async def blackjack(ctx):
             await bot.say("Perdiste",delete_after=2.0)
             continue
         while True:
-            await asyncio.sleep(1.5)
-            dealercards=", ".join([card.split(" ")[1] for card in dealer["cartas"]])
+            await asyncio.sleep(1)
+            dealercards=", ".join(dealer["cartas"])
             dealervalor=j.bjvalor(dealer)
             dealercards = "[%s (%i)]" % (dealercards,dealervalor)
             opc = dealercards.join(re.split(r"\[[^\]]+\]",opc))
@@ -1133,7 +1285,7 @@ async def blackjack(ctx):
     c.eliminarMoneda(moneda.getID())
     banco.deleteID(moneda.getID(),dbt)
     print(fichas)
-    await bot.say(ctx.message.author.mention+"   **Recompensa obtenida:**")
+    await bot.say(ctx.message.author.mention+"   **Recompensa obtenida: %i**" % sum(fichas))
     for f in fichas:
         nmoneda=banco.TMoneda(f,moneda.consultarExpiracion(),banco.makeID(dbt))
         c.agregarMoneda(nmoneda)

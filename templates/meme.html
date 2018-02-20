@@ -1,0 +1,39 @@
+<html>
+	<head>
+		<title>Meme</title>
+		<style>
+			body {
+				{{ css3 }}
+				padding:0 0;
+				background-image: url("{{ url }}");
+				background-attachment: fixed;
+				background-size: 100vw 100vh;
+			}
+
+			h2 {
+				text-align: center;
+				color: #fff;
+				font-size: 200%;
+				font: arial;
+			}
+			
+			#top {
+				position:absolute;
+				width: 100%;
+				top: 0px;
+				{{ css1 }}
+			}
+			
+			#bottom {
+				margin-top: 100%;
+				margin-bottom: 0px;
+				{{ css2 }}
+			}
+
+		</style>
+	</head>
+	<body>
+		<h2 id='top'> {{ top }} </h2>
+		<h2 id='bottom'> {{ bottom }} </h2>
+	</body>
+</html>

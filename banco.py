@@ -113,6 +113,7 @@ class Actualizadora:
                 base64.b64encode(pickle.dumps(self.__cuenta)).decode(), self.__cuenta.getID())
                 )
             db_accounts.commit()
+            #db_accounts.execute("CREATE TABLE IF NOT EXISTS Data(ID INTEGER PRIMARY KEY,")
             db_accounts.close()
             return [deleteID(m.getID(),self.__db_name) for m in r]
         return actualizarCuenta
@@ -269,6 +270,14 @@ def DividirMoneda(moneda,db,d=2):
         for el in range(d):
             divs.append(banco.TMoneda(moneda.consultarValor(),int(ex/d),makeID(db)))
     return divs
+
+def ExtraerMoneda(moneda,db,dur=10*MINUTO):
+    try:
+        original = TMoneda(moneda.consultarValor(),moneda.consultarExpiracion()-dur,moneda.getID())
+        extra = TMoneda(moneda.consultarValor(),dur,makeID(db))
+        return (True,original,extra)
+    except:
+        return (False,)
 
 def ClonarMoneda(moneda):
     return TMoneda(moneda.consultarValor(),moneda.consultarExpiracion(),-1)

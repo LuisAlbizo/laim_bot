@@ -47,9 +47,8 @@ class BlackjackGame:
             for y in [int(a) for a in rpp[1].split(" ")[0].split(",")]]
 
 def bjrepartir(cartas):
-    jugador={"cartas":[a.split(" ")[1] for a in cartas]}
-    jugador["valores"]=[x+y for x in [int(a) for a in cartas[0].split(" ")[0].split(",")]
-        for y in [int(a) for a in cartas[1].split(" ")[0].split(",")]]
+    jugador={"cartas":cartas}
+    jugador["valores"]=[x+y for x in valores[cartas[0][0]] for y in valores[cartas[1][0]]]
     return jugador
 
 def bjpedir(jugador,repartidor):
