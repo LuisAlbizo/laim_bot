@@ -1,6 +1,7 @@
 from flask import Flask, request, render_template
 from bokeh.plotting import figure
 from bokeh.embed import components
+from bokeh.models import ColumnDataSource, Label
 import base64, pickle
 
 app = Flask(__name__)
@@ -40,7 +41,8 @@ def profile():
     datavalor = [d['data']['saldo_valor'] for d in data]
     datatiempo = [int(d['data']['saldo_duracion']/60/60) for d in data]
     #Plot
-    p = figure(plot_width=400, plot_height=240,sizing_mode = 'scale_width')
+    p = figure(plot_width=400, plot_height=240,sizing_mode = 'scale_width',
+        title = 'Relacion Duracion(horas)-Valor total')
     p.circle(range(len(datavalor)), datavalor, size=4, color="navy", alpha=0.5)
     p.line(range(len(datavalor)), datavalor, line_width=3, color="navy", alpha=0.5)
     p.square(range(len(datatiempo)), datatiempo, size=4, color="#88bbbb", alpha=1)

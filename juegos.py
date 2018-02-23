@@ -36,6 +36,9 @@ class Repartidor:
     def cuantashay(self):
         return len(self.__maso)
 
+    def agregarcartas(self,cartas):
+        self.__maso+=cartas
+
 def bjrepartir(cartas):
     jugador={"cartas":cartas}
     jugador["valores"]=[x+y for x in valores[cartas[0][0]] for y in valores[cartas[1][0]]]

@@ -1,148 +1,100 @@
-import time, pickle, base64, sqlite3, math, pymongo
+import time, pickle, base64, math
+from pymongo import MongoClient
 
 MINUTO = 60
 HORA = 60*MINUTO
 DIA = 24*HORA
 
-def makeID(db):
-    a=sqlite3.connect(db)
-    a.execute("CREATE TABLE IF NOT EXISTS Cont(ID INTEGER PRIMARY KEY,Ocupado BOOL NOT NULL)")
-    a.commit()
-    cur=a.execute("SELECT ID FROM Cont WHERE Ocupado IS 0")
-    try:
-        d=next(cur)
-        cur.close()
-        idd=d[0]
-        a.execute("UPDATE Cont SET Ocupado = 1 WHERE ID IS "+str(idd))
-        a.commit()
-    except StopIteration:
-        cur=a.execute("SELECT MAX(ID) FROM Cont")
-        b=list(cur)
-        if b[0][0]:
-            idd=b[0][0]+1
-            a.execute("INSERT INTO Cont VALUES(%i,1)" % idd)
-            a.commit()
-        else:
-            idd=1
-            a.execute("INSERT INTO Cont VALUES(%i,1)" % idd)
-            a.commit()
-    a.close()
-    return idd
+def EncodeObject(obj):
+    return base64.b64encode(pickle.dumps(obj)).decode()
 
+def DecodeObject(data):
+    return pickle.loads(base64.b64decode(data.encode()))
+
+def makeID(db):
+    cursor = db.contador.find({'ocupado':0})
+    if not(cursor.count()):
+        idlibre = db.contador.find().count()+1
+        db.contador.insert({'_id':idlibre,'ocupado':1})
+    else:
+        idlibre = cursor.next()['_id']
+        db.contador.update_one({'_id':idlibre},{'$set':{'ocupado':1}})
+    cursor.close()
+    return idlibre
+        
 def deleteID(ID,db):
-    a=sqlite3.connect(db)
-    a.execute("UPDATE Cont SET Ocupado = 0 WHERE ID IS "+str(ID))
-    a.commit()
-    a.close()
+    db.contador.update_one({'_id':ID},{'$set':{'ocupado':0}})
 
 class TBanco:
     def __init__(self,db):
-        self.__db=db
-        self.__cuentas_db=db
-        db_accounts=sqlite3.connect(self.__db)
-        db_accounts.execute(
-        "CREATE TABLE IF NOT EXISTS Accounts(ID INTEGER NOT NULL,Account_data TEXT NOT NULL, Data TEXT NOT NULL)")
-        db_accounts.commit()
-        db_accounts.close()
+        self.__db = db
 
     #Funciones para el usuario, basicas
 
     def crearCuenta(self,ID):
-        cuenta=TCuenta(ID)
-        cuenta._TCuenta__setActualizadora(Actualizadora(cuenta,self.__db))
+        cuenta = TCuenta(ID)
+        cuenta._TCuenta__setActualizadora(Actualizadora(cuenta,self.__db.name))
         for _ in range(5):
             cuenta.agregarMoneda(TMoneda(100,3*DIA,makeID(self.__db)))
-        db_accounts=sqlite3.connect(self.__db)
-        db_accounts.execute(
-            "INSERT INTO 'Accounts' (ID,Account_data,Data) VALUES (%i,'%s','%s')" % (
-                cuenta.getID(), 
-                base64.b64encode(pickle.dumps(cuenta)).decode(),
-                base64.b64encode(pickle.dumps([{'data':cuenta.__json__(),'time':int(time.time())}])).decode()
+        db_accounts = self.__db.accounts
+        exists = db_accounts.find_one({'_id':cuenta.getID()},{'_id':True})
+        if not(exists):
+            db_accounts.insert_one({
+                '_id':cuenta.getID(),
+                'account':EncodeObject(cuenta),
+                'data':[{'data':cuenta.__json__(),'time':int(time.time())}]
+                }    
             )
-        )
-        db_accounts.commit()
-        db_accounts.close()
+        else:
+            db_accounts.update_one({'_id':cuenta.getID()},{'$set':{
+                'account':EncodeObject(cuenta),
+                'data':[{'data':cuenta.__json__(),'time':int(time.time())}]
+                }}
+            )
         return cuenta
 
     def obtenerCuenta(self,ID):
-        db_accounts=sqlite3.connect(self.__cuentas_db)
-        cursor=db_accounts.execute("select Account_data from Accounts where ID=%i" % ID)
-        try:
-            cuenta=next(cursor)
-            cursor.close()
-            cuenta=pickle.loads(base64.b64decode(cuenta[0].encode()))
-            db_accounts.close()
-            return cuenta
-        except:
-            cursor.close()
-            db_accounts.close()
-            return None
+        db_accounts = self.__db.accounts
+        cuenta = db_accounts.find_one({'_id':ID},{'account':True})
+        if cuenta:
+            cuenta = cuenta.get('account',None)
+            if cuenta:
+                cuenta = DecodeObject(cuenta)
+        return cuenta
 
     def obtenerData(self,ID):
-        db_accounts=sqlite3.connect(self.__cuentas_db)
-        cursor=db_accounts.execute("SELECT Data FROM Accounts WHERE ID=%i" % ID)
-        try:
-            data=next(cursor)
-            cursor.close()
-            data=pickle.loads(base64.b64decode(data[0].encode()))
-            db_accounts.close()
-            return data
-        except:
-            cursor.close()
-            db_accounts.close()
-            return None
-'''
+        db_accounts = self.__db.accounts
+        data = db_accounts.find_one({'_id':ID},{'data':True})
+        if data:
+            data = data.get('data',None)
+        return data
+
     def obtenerCuentas(self,page=1,pagesize=20):
-        if page<=0:
-            return {"error":True,"error_message":"Pagina "+str(page)+" fuera de rango"}
-        db_accounts=sqlite3.connect(self.__cuentas_db)
-        cursor=db_accounts.execute("SELECT Account_data FROM Accounts")
-        npages=(lambda a,b:int(a/b)+1 if a%b else int(a/b))(cursor.count(),pagesize)
-        cursor=cursor.skip((page-1)*pagesize)
-        if not(cursor.count()):
-            conn.close()
-            return {"error":True,"error_message":"Pagina "+str(page)+" fuera de rango"}
-        cuentas=[DecodeObject(cuenta['account_data']).__json__() for cuenta in cursor.limit(pagesize)]
-        last_page=False
-        if len(cuentas)<pagesize or cursor.count()==pagesize:
-            last_page=True
-        conn.close()
-        return {
-            "error" : False,
-            "cuentas" : cuentas,
-            "page" : page,
-            "last_page" : last_page,
-            "npages" : npages
-        }
-'''
+        db_accounts=self.__db.accounts
+        cuentas = [DecodeObject(el['account']) 
+            for el in db_accounts.find({},{'account':True},limit=pagesize,skip=pagesize*(page-1))]
+        return cuentas
+
 class Actualizadora:
     """docstring for Actualizadora"""
     def __init__(self,cuenta,db_name):
         self.__cuenta=cuenta
-        self.__db_name=db_name
+        self.__db=db_name
 
     def __call__(self,a_funcion):
         def actualizarCuenta():
             r=a_funcion()
-            db_accounts=sqlite3.connect(self.__db_name)
-            db_accounts.execute("UPDATE Accounts SET Account_data='%s' where ID='%s'" % (
-                base64.b64encode(pickle.dumps(self.__cuenta)).decode(), 
-                self.__cuenta.getID()
-                )
+            client = MongoClient()
+            db_accounts=client.get_database(self.__db).accounts
+            db_accounts.update_one(
+                {'_id':self.__cuenta.getID()},
+                {'$set':{'account':EncodeObject(self.__cuenta)}}
+            ) 
+            db_accounts.update_one(
+                {'_id':self.__cuenta.getID()},
+                {'$push':{'data':{'data':self.__cuenta.__json__(),'time':int(time.time())}}}
             )
-            db_accounts.commit()
-            data = next(db_accounts.execute("SELECT Data FROM Accounts WHERE ID = %i" % 
-                self.__cuenta.getID()))[0]
-            data = pickle.loads(base64.b64decode(data.encode()))
-            data.append({'data':self.__cuenta.__json__(),'time':int(time.time())})
-            db_accounts.execute("UPDATE Accounts SET Data='%s' where ID=%i" % (
-                base64.b64encode(pickle.dumps(data)).decode(),
-                self.__cuenta.getID()
-                )
-            )
-            db_accounts.commit()
-            db_accounts.close()
-            return [deleteID(m.getID(),self.__db_name) for m in r]
+            return [deleteID(m.getID(),self.__db) for m in r]
         return actualizarCuenta
 
 class TMoneda:
@@ -152,7 +104,7 @@ class TMoneda:
         self.__emision=int(time.time())
         self.__duracion=duracion
         self.__valor=valor
-        if not(math.log10(self.__valor).is_integer() and (self.__duracion>=MINUTO)):
+        if not(math.log10(self.__valor).is_integer() and self.__duracion>=MINUTO):
             raise Exception("Datos de la moneda invalidos")
 
     def consultarExpiracion(self):

@@ -1,9 +1,10 @@
-import discord, async, random, time, sqlite3, re, datetime, os, threading, math, asyncio, socket, hashlib
-import base64, pickle
+import discord, async, random, time, re, datetime, os, threading, math, asyncio, socket, hashlib, base64
+import pickle
 from discord.ext import commands
-from .fortunas import fortunas
 from functools import reduce
+from pymongo import MongoClient
 from bot.banco import DIA, HORA, MINUTO
+from .fortunas import fortunas
 import bot.scraper as scraper
 import bot.hchan as hchan
 import bot.banco as banco
@@ -25,9 +26,9 @@ def segundosV(segundos):
 #Bot
 bot = commands.Bot(command_prefix="_")
 dirbot = "/sdcard/practicas/python/discord/laimbot/bot/"
-dbf = "bot/files/laim.db"
-dbt = "bot/files/laimtest.db"
-bank = banco.TBanco(dbt)
+client = MongoClient()
+db = client.laimbot
+bank = banco.TBanco(db)
 init_time = None
 
 @bot.event
@@ -443,112 +444,117 @@ async def hispa(ctx):
 
 @bot.command(pass_context=True)
 async def t(ctx):
+    """
+    Comando para crear tags.
+
+    Usa '_t test Hola Mundo' para crear o actualizar un tag
+    Usa '_t test' para ver el contenido de un tag
+    Usa '_t test *delete' para borrar un tag
+    Usa '_t *list' para ver la lista de tags
+    """
     cmd = re.compile(r"_t (?P<tag>\w+) ?(?P<content>.*)")
     t = cmd.match(ctx.message.content)
     if t:
-        db = sqlite3.connect(dbf)
         if t.groupdict()["content"] == "*delete":
-            cur = db.execute("SELECT user FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
-            try:
-                user = next(cur)[0]
-                if int(ctx.message.author.id) == user:
-                    db.execute("DELETE FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
-                    db.commit()
-                    await bot.say("Tag '%s' eliminado correctamente" % t.groupdict()["tag"])
-                else:
-                    await bot.say("Tu no puedes eliminar este tag")
-            except:
-                await bot.say("Ese tag ni existe we")
+            tags = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'tags':True})
+            if tags:
+                if 'tags' in tags:
+                    if t.groupdict()["tag"] in tags['tags']:
+                        db.accounts.tags.find_one_and_delete({'_id':t.groupdict()["tag"]})
+                        db.accounts.update_one({'_id':int(ctx.message.author.id)},
+                            {'$pull':{'tags':t.groupdict()["tag"]}})
+                        await bot.say("Tag '%s' eliminado correctamente" % t.groupdict()["tag"])
+                        return
+            await bot.say("Tu no puedes eliminar este tag")
         elif t.groupdict()["content"]:
-            cur = db.execute("SELECT user FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
-            try:
-                user = next(cur)[0]
-                if int(ctx.message.author.id) == user:
-                    db.execute("UPDATE Tags SET content = '%s' WHERE tag IS '%s'" % (
-                        t.groupdict()["content"],
-                        t.groupdict()["tag"]
+            tags = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'tags':True})
+            if tags:
+                if 'tags' in tags:
+                    if t.groupdict()["tag"] in tags['tags']:
+                        db.accounts.tags.update_one(
+                            {'_id':t.groupdict()["tag"]},
+                            {"$set":{"content":t.groupdict()["content"]}}
                         )
-                    )
-                    db.commit()
-                    await bot.say("Tag '%s' actualizado correctamente" % t.groupdict()["tag"])
+                        await bot.say("Tag '%s' actualizado correctamente" % t.groupdict()["tag"])
+                        return
+                    else:
+                        tag = db.accounts.tags.find_one({'_id':t.groupdict()["tag"]})
+                        if not(tag):
+                            db.accounts.tags.insert({'_id':t.groupdict()["tag"],
+                            'content':t.groupdict()["content"]})
+                            db.accounts.update_one({'_id':int(ctx.message.author.id)},
+                                {'$push':{'tags':t.groupdict()["tag"]}})
+                            await bot.say("Tag '%s' creado correctamente." % t.groupdict()["tag"])
+                        else:
+                            return await bot.say("Tu no puedes actualizar este tag")
+            else:
+                tag = db.accounts.tags.find_one({'_id':t.groupdict()["tag"]})
+                if tag:
+                    return await bot.say("Tu no puedes actualizar este tag")
                 else:
-                    await bot.say("Tu no puedes actualizar este tag")
-            except:
-                db.execute("INSERT INTO Tags VALUES ('%s','%s',%i)" % (
-                    t.groupdict()["tag"],
-                    t.groupdict()["content"],
-                    int(ctx.message.author.id)
-                    )
-                )
-                db.commit()
+                    user = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'_id':True})
+                    if not(user):
+                        db.accounts.insert_one(
+                            {
+                                '_id' : int(ctx.message.author.id),
+                                'tags' : [t.groupdict()["tag"]]
+                            }
+                        )
+                    db.accounts.tags.insert({'_id':t.groupdict()["tag"],'content':t.groupdict()["content"]})
                 await bot.say("Tag '%s' creado correctamente." % t.groupdict()["tag"])
         else:
-            cur = db.execute("SELECT content FROM Tags WHERE tag IS '%s'" % t.groupdict()["tag"])
-            try:
-                content = next(cur)[0]
-                await bot.say(content)
-                cur.close()
-            except:
+            tag = db.accounts.tags.find_one({'_id':t.groupdict()["tag"]})
+            if tag:
+                await bot.say(tag['content'])
+            else:
                 await bot.say("No existe el tag '%s'" % t.groupdict()["tag"])
-        db.close()      
-    elif ctx.message.content.strip().lower() == "_t *list":
-        db = sqlite3.connect(dbf)
-        cur = db.execute("SELECT tag FROM Tags ORDER BY user")
-        l="```\n"
-        for el in cur:
-            l+=el[0]+"\n"
-        await bot.say(l+"```")
-        db.close()
+    elif ctx.message.content.lower() == "_t *list":
+        tags = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'tags':True})
+        if tags:
+            print(tags)
+            if 'tags' in tags:
+                l="```\n"
+                for el in tags['tags']:
+                    l+=el+"\n"
+                return await bot.say(l+"```")
+        await bot.say('No tienes ninguno')
     else:
-        await bot.say("""No, asi no funciona
-            ```
-Usa '_t test Hola Mundo' para crear o actualizar un tag
-Usa '_t test' para ver el contenido de un tag
-Usa '_t test *delete' para borrar un tag
-Usa '_t *list' para ver la lista de tags
-            ```
-            """)
+        await bot.say('Usa _help t')
 
 #Comandos banco
 
 @bot.command(pass_context=True)
 async def reward(ctx):
-    db = sqlite3.connect(dbt)
-    db.execute("CREATE TABLE IF NOT EXISTS Rewards(User INTEGER PRIMARY KEY NOT NULL, Last INTEGER, Unica BOOLEAM NOT NULL,init INTEGER NOT NULL)")
-    db.commit()
-    cur=db.execute("SELECT * FROM Rewards WHERE User IS %i" % int(ctx.message.author.id))
-    try:
-        r=next(cur)
-        cur.close()
+    user = db.accounts.find_one(
+        {'_id':int(ctx.message.author.id)},{'last_reward':True,'unique_reward':True})
+    if user.get('last_reward',False):
         if ctx.message.content[8:].strip().lower()=="-u":
-            if r[2]:
+            if user.get('unique_reward',False):
                 await bot.say("Ya recojiste tu recompensa unica :'(")
             else:
-                await bot.say("")
+                await bot.say("Aun no disponible")
         else:
-            if int(time.time())-r[1]>=banco.DIA:
-                db.execute("UPDATE Rewards SET Last = %i WHERE User IS %i" % (
-                    int(time.time()),int(ctx.message.author.id)
-                    )
+            if int(time.time())-user['last_reward']>=banco.DIA:
+                db.accounts.update(
+                    {'_id':int(ctx.message.author.id)},
+                    {'$set':{"last_reward":int(time.time())}}
                 )
-                db.commit()
-                c=bank.obtenerCuenta(int(ctx.message.author.id))
-                nm=banco.TMoneda(100,banco.DIA,banco.makeID(dbt))
-                c.agregarMoneda(nm)
-                c.actualizarSaldo()
-                s=segundosV(nm.consultarExpiracion())
+                cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
+                nuevamoneda = banco.TMoneda(100,DIA,banco.makeID(db))
+                cuenta.agregarMoneda(nuevamoneda)
+                cuenta.actualizarSaldo()
+                s = segundosV(nuevamoneda.consultarExpiracion())
                 await bot.say("Recompensa obtenida:\n```\n%s:{\n\tduracion: %i dias,%i horas,%i minutos\
                         \n\tvalor: %i\n}```" % (
-                        hex(nm.getID())[2:].upper(),
+                        hex(nuevamoneda.getID())[2:].upper(),
                         s["dias"],
                         s["horas"],
                         s["minutos"],
                         nm.consultarValor()
-                    ),
-                    delete_after=10.0
+                    )
                 )
             else:
-                s=segundosV(banco.DIA-((int(time.time())-r[1])))
+                s = segundosV(DIA-((int(time.time())-user['last_reward'])))
                 await bot.say("Recompensa disponible dentro de %i horas, %i minutos y %i segundos" %
                         (
                             s["horas"],
@@ -556,17 +562,15 @@ async def reward(ctx):
                             s["segundos"]
                         )
                     )
-    except:
-        c=bank.crearCuenta(int(ctx.message.author.id))
-        db.execute("INSERT INTO Rewards VALUES (%i, %i, 0, %i)" % (
-            int(ctx.message.author.id),
-            int(time.time()),
-            int(time.time())
-            )
+    else:
+        cuenta = bank.crearCuenta(int(ctx.message.author.id))
+        db.accounts.update_one({'_id':int(ctx.message.author.id)},{'$set':{
+                'last_reward' : int(time.time()),
+                'unique_reward' : True
+            }}
         )
-        db.commit()
-        for m in c.__json__()["saldo_monedas"]:
-            s=segundosV(m["expiracion"])
+        for m in cuenta.__json__()["saldo_monedas"]:
+            s = segundosV(m["expiracion"])
             await bot.say("Recompensa obtenida por crear una cuenta:\
                 \n```\n%s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
                 hex(m["ID"])[2:].upper(),
@@ -574,24 +578,21 @@ async def reward(ctx):
                 s["horas"],
                 s["minutos"],
                 m["valor"]
-            ),
-            delete_after=16.0
+            )
         )
-        nm=banco.TMoneda(100,banco.DIA,banco.makeID(dbt))
-        c.agregarMoneda(nm)
-        c.actualizarSaldo()
-        s=segundosV(nm.consultarExpiracion())
-        await bot.say("Recompensa obtenida:\n```\n%s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
-                hex(nm.getID())[2:].upper(),
+        nuevamoneda = banco.TMoneda(100,DIA,banco.makeID(db))
+        cuenta.agregarMoneda(nuevamoneda)
+        s = segundosV(nuevamoneda.consultarExpiracion())
+        await bot.say(
+        "Recompensa obtenida:\n```\n%s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
+                hex(nuevamoneda.getID())[2:].upper(),
                 s["dias"],
                 s["horas"],
                 s["minutos"],
-                nm.consultarValor()
-            ),
-            delete_after=16.0       
+                nuevamoneda.consultarValor()
+            )     
         )
-    finally:
-        db.close()
+        cuenta.actualizarSaldo()
 
 @bot.command(pass_context=True)
 async def saldo(ctx):
@@ -606,8 +607,7 @@ async def saldo(ctx):
                 s["horas"],
                 s["minutos"],
                 m["valor"]
-            ),
-            delete_after=16.0
+            )
         )
     elif c:
         c.actualizarSaldo()
@@ -643,7 +643,6 @@ async def top(ctx):
         if c:
             threading.Thread(target=c.actualizarSaldo).start()
             cuentas.append(c)
-    print([el.getID() for el in cuentas])
     param=param.split(' ')
     try:
         if len(cuentas)<int(param[0]):
@@ -892,29 +891,18 @@ async def perfil(ctx):
         cuenta=bank.obtenerCuenta(int(ctx.message.author.id))
         if not(cuenta):
             return await bot.say("Primero crea una cuenta con _reward")
-    db = sqlite3.connect(dbt)
-    db.execute("CREATE TABLE IF NOT EXISTS Styles(ID INTEGER PRIMARY KEY, style TEXT NOT NULL)")
-    db.commit()
-    cursor=db.execute("SELECT style FROM Styles WHERE ID=%i" % cuenta.getID())
-    try:
-        styles=next(cursor)
-        cursor.close()
-        styles=pickle.loads(base64.b64decode(styles[0].encode()))
-    except:
+    styles = db.accounts.find_one({'_id':cuenta.getID()},{'styles':True})
+    if 'styles' in styles:
+        styles=styles['styles']
+    else:
         styles = {
             'desc' : 'Hola Mundo',
             'background' : '/static/images/pattern1.png',
             'namecolor' : '#0f0f1f'
         }
-        db.execute("INSERT INTO Styles VALUES(%i, '%s')" % (
-                cuenta.getID(),
-                base64.b64encode(pickle.dumps(styles)).decode()
-            )
-        )
-        db.commit()
+        db.accounts.update_one({'_id':cuenta.getID()},{'$set':{'styles':styles}})
     propt = re.compile("_perfil (?P<opc>\\*[a-z]+) (?P<vars>([a-z]+=\"[^\"]*\" ?)+)")
     propt = propt.match(ctx.message.content)
-    print(propt)
     if propt:
         propt = propt.groupdict()
         varbs = [re.match('(?P<var>[a-z]+)="(?P<value>[^"]*)"', el).groupdict() 
@@ -929,16 +917,10 @@ async def perfil(ctx):
                         await bot.say('Incluye una imagen en tu mensaje')
                         continue
                 styles[el['var']] = el['value']
-            db.execute("UPDATE Styles SET style='%s' WHERE ID=%i" % (
-                    base64.b64encode(pickle.dumps(styles)).decode(),
-                    cuenta.getID()
-                )
-            )
-            db.commit()
+            db.accounts.update_one({'_id':cuenta.getID()},{'$set':{'styles':styles}})
             await bot.say('Nuevos estilos: %s' % ', '.join([k+'='+styles[k] for k in styles]))
         else:
             pass
-    db.close()
     conn = socket.socket()
     try:
         conn.connect(("127.0.0.1",4300))
@@ -1006,8 +988,8 @@ async def juntar(ctx):
         return await bot.say("Las monedas tienen valores distintos")
     for m in monedas:
         cuenta.eliminarMoneda(m.getID())
-        banco.deleteID(m.getID(),dbt)
-    nmoneda = banco.FusionarMonedas(monedas,banco.makeID(dbt))
+        banco.deleteID(m.getID(),db)
+    nmoneda = banco.FusionarMonedas(monedas,banco.makeID(db))
     cuenta.agregarMoneda(nmoneda)
     cuenta.actualizarSaldo()
     m=cuenta.obtenerMoneda(nmoneda.getID()).__json__()
@@ -1060,7 +1042,7 @@ async def extraer(ctx):
         return await bot.say("Variable desconocida: "+ex['evaluar'])
     except Exception as e:
         return await bot.say("Error matematico: "+str(e))
-    ext = banco.ExtraerMoneda(moneda,dbt,dur)
+    ext = banco.ExtraerMoneda(moneda,db,dur)
     if ext[0]:
         cuenta.eliminarMoneda(moneda.getID())
         cuenta.agregarMoneda(ext[1])
@@ -1138,7 +1120,7 @@ async def blackjack(ctx):
         for el in range(int(math.log10(div))-1):
             _,nmoneda = banco.TCambio(nmoneda,"t")
         monedas.append(nmoneda)
-    rp = j.Repartidor(j.masobj)
+    rp = j.Repartidor(j.masobj*6)
     await bot.delete_message(msg)
     info = await bot.send_message(canal,"Cargando info...")
     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
@@ -1169,6 +1151,8 @@ async def blackjack(ctx):
         await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
             len(monedas),nmoneda.consultarExpiracion()/60/60
         ))
+        if rp.cuantashay()<20:
+            rp.agregarcartas(j.masobj*6)
         jugador=j.bjrepartir(rp.repartir(2))
         dealer=j.bjrepartir(rp.repartir(2))
         opc = "```\nDealer tiene: [%s (%i)]\nTu tienes: {%s, %s (%i)}\n\nOpciones: doblar, pedir, mantener, salir" % (
@@ -1333,13 +1317,13 @@ async def blackjack(ctx):
     await bot.delete_message(ronda)
     fichas=j.regresarFichas(len(monedas))
     c.eliminarMoneda(moneda.getID())
-    banco.deleteID(moneda.getID(),dbt)
+    banco.deleteID(moneda.getID(),db)
     recompensa = []
     await bot.say(ctx.message.author.mention+"   **Recompensa obtenida: %i**" % sum(fichas))
     for f in fichas:
-        nmoneda=banco.TMoneda(f,moneda.consultarExpiracion(),banco.makeID(dbt))
+        nmoneda=banco.TMoneda(f,moneda.consultarExpiracion(),banco.makeID(db))
         c.agregarMoneda(nmoneda)
-        recompensa+=nmoneda.getID()
+        recompensa.append(nmoneda.getID())
         m=nmoneda.__json__()
         s=segundosV(m["expiracion"])
         await bot.say("\n```\n%s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
