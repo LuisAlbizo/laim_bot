@@ -14,13 +14,13 @@
 		header {
 			height: 350px;
 			text-align: center;
-			background-image: url("/static/images/pattern1.png");
+			background-image: url("{{ cuenta['styles']['background'] }}");
 			background-attachment: fixed;
-			background-size: 100vw 100vh;
+			background-size: 100vw 350px;
 		}
 
 		h1 {
-			font-size: 64px;	
+			font-size: 64px;
 		}
 
 		h2  {
@@ -92,7 +92,7 @@
 {% block content %}
 	<header class="comtainer">
 		<div class="row">
-			<h1>{{ cuenta['username'] }}</h1>
+			<h1 style="color:{{ cuenta['styles']['namecolor'] }};">{{ cuenta['username'] }}</h1>
 		</div>
 	</header>
 
@@ -103,7 +103,7 @@
 					Descripcion:
 				</h2>
 				<p>
-					Hola Mundo
+					{{ cuenta['styles']['desc'] }}
 				</p>
 			</article>
 

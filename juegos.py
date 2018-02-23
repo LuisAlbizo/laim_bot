@@ -36,16 +36,6 @@ class Repartidor:
     def cuantashay(self):
         return len(self.__maso)
 
-class BlackjackGame:
-    def __init__(self,nmasos=6):
-        self.repartidor = Repartidor(masobj*nmasos)
-
-    def makeround(nplayers=1):
-        rpp=rp.repartir(2)
-        jugador={"cartas":[a.split(" ")[1] for a in rpp],"fichas":monedas}
-        jugador["valores"]=[x+y for x in [int(a) for a in rpp[0].split(" ")[0].split(",")]
-            for y in [int(a) for a in rpp[1].split(" ")[0].split(",")]]
-
 def bjrepartir(cartas):
     jugador={"cartas":cartas}
     jugador["valores"]=[x+y for x in valores[cartas[0][0]] for y in valores[cartas[1][0]]]

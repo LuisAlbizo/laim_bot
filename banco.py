@@ -1,4 +1,4 @@
-import time,pickle,base64,sqlite3,math
+import time, pickle, base64, sqlite3, math, pymongo
 
 MINUTO = 60
 HORA = 60*MINUTO
@@ -41,7 +41,7 @@ class TBanco:
         self.__cuentas_db=db
         db_accounts=sqlite3.connect(self.__db)
         db_accounts.execute(
-        "CREATE TABLE IF NOT EXISTS Accounts(ID INTEGER NOT NULL,Account_data TEXT NOT NULL)")
+        "CREATE TABLE IF NOT EXISTS Accounts(ID INTEGER NOT NULL,Account_data TEXT NOT NULL, Data TEXT NOT NULL)")
         db_accounts.commit()
         db_accounts.close()
 
@@ -54,8 +54,10 @@ class TBanco:
             cuenta.agregarMoneda(TMoneda(100,3*DIA,makeID(self.__db)))
         db_accounts=sqlite3.connect(self.__db)
         db_accounts.execute(
-            "INSERT INTO 'Accounts' (ID,Account_data) VALUES (%i,'%s')" % (
-                cuenta.getID(), base64.b64encode(pickle.dumps(cuenta)).decode() 
+            "INSERT INTO 'Accounts' (ID,Account_data,Data) VALUES (%i,'%s','%s')" % (
+                cuenta.getID(), 
+                base64.b64encode(pickle.dumps(cuenta)).decode(),
+                base64.b64encode(pickle.dumps([{'data':cuenta.__json__(),'time':int(time.time())}])).decode()
             )
         )
         db_accounts.commit()
@@ -71,6 +73,20 @@ class TBanco:
             cuenta=pickle.loads(base64.b64decode(cuenta[0].encode()))
             db_accounts.close()
             return cuenta
+        except:
+            cursor.close()
+            db_accounts.close()
+            return None
+
+    def obtenerData(self,ID):
+        db_accounts=sqlite3.connect(self.__cuentas_db)
+        cursor=db_accounts.execute("SELECT Data FROM Accounts WHERE ID=%i" % ID)
+        try:
+            data=next(cursor)
+            cursor.close()
+            data=pickle.loads(base64.b64decode(data[0].encode()))
+            db_accounts.close()
+            return data
         except:
             cursor.close()
             db_accounts.close()
@@ -110,10 +126,21 @@ class Actualizadora:
             r=a_funcion()
             db_accounts=sqlite3.connect(self.__db_name)
             db_accounts.execute("UPDATE Accounts SET Account_data='%s' where ID='%s'" % (
-                base64.b64encode(pickle.dumps(self.__cuenta)).decode(), self.__cuenta.getID())
+                base64.b64encode(pickle.dumps(self.__cuenta)).decode(), 
+                self.__cuenta.getID()
                 )
+            )
             db_accounts.commit()
-            #db_accounts.execute("CREATE TABLE IF NOT EXISTS Data(ID INTEGER PRIMARY KEY,")
+            data = next(db_accounts.execute("SELECT Data FROM Accounts WHERE ID = %i" % 
+                self.__cuenta.getID()))[0]
+            data = pickle.loads(base64.b64decode(data.encode()))
+            data.append({'data':self.__cuenta.__json__(),'time':int(time.time())})
+            db_accounts.execute("UPDATE Accounts SET Data='%s' where ID=%i" % (
+                base64.b64encode(pickle.dumps(data)).decode(),
+                self.__cuenta.getID()
+                )
+            )
+            db_accounts.commit()
             db_accounts.close()
             return [deleteID(m.getID(),self.__db_name) for m in r]
         return actualizarCuenta
@@ -153,6 +180,7 @@ class TCuenta:
         self.__saldo_valor=0
         self.__id=ID
         self.__saldo_monedas=[]
+        self.__saldo_duracion=0
         self.__creacion=int(time.time())
 
     def __setActualizadora(self,actualizadora):
@@ -171,8 +199,14 @@ class TCuenta:
             return self.__saldo_valor
         elif que.lower()=="monedas":
             return self.__saldo_monedas
+        elif que.lower()=="duracion":
+            return self.__saldo_duracion
         else:
-            return {"valor":self.__saldo_valor,"monedas":self.__saldo_monedas}
+            return {
+                "valor" : self.__saldo_valor,
+                "monedas" : self.__saldo_monedas,
+                "duracion" : self.__saldo_duracion
+            }
 
     def agregarMoneda(self,moneda):
         self.__saldo_monedas.append(moneda)
@@ -194,6 +228,7 @@ class TCuenta:
             d=filter(lambda moneda:moneda.consultarExpiracion()<0,self.__saldo_monedas)
             self.__saldo_monedas = list(filter(lambda moneda:moneda.consultarExpiracion()>0,self.__saldo_monedas))
             self.__saldo_valor = sum([moneda.consultarValor() for moneda in self.__saldo_monedas])
+            self.__saldo_duracion = sum([moneda.consultarExpiracion() for moneda in self.__saldo_monedas])
             return d
         return actualizar()
 
@@ -216,7 +251,7 @@ class TCuenta:
     def transferirMonedas(self,monedas,cuenta):
         for moneda in monedas:
             cuenta.agregarMoneda(moneda)
-            self.__saldo_monedas.remove(monedas)
+            self.__saldo_monedas.remove(moneda)
             #cuenta.actualizarSaldo()
         self.actualizarSaldo()
 
@@ -224,6 +259,7 @@ class TCuenta:
         return {
             "ID":self.getID(),
             "saldo_valor":self.getSaldo("valor"),
+            "saldo_duracion":self.getSaldo("duracion"),
             "saldo_monedas":[moneda.__json__() for moneda in self.getSaldo("monedas")]
         }
 

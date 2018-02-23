@@ -35,14 +35,16 @@ def profile():
     with open(base64.b16decode(request.args.get('pkfile','').encode()).decode(),'rb') as pkf:
         cuenta = pickle.load(pkf)
         pkf.close()
-    duracion = "%.2f dias" % (sum([m['expiracion'] for m in cuenta['cuenta']['saldo_monedas']])/60/60/24)
-    
-    #First Plot
+    duracion = "%.2f dias" % (cuenta['cuenta']['saldo_duracion']/60/60/24)
+    data = cuenta['data']
+    datavalor = [d['data']['saldo_valor'] for d in data]
+    datatiempo = [int(d['data']['saldo_duracion']/60/60) for d in data]
+    #Plot
     p = figure(plot_width=400, plot_height=240,sizing_mode = 'scale_width')
-    p.circle([1, 2, 3, 4, 5], [6, 7, 2, 4, 5], size=10, color="navy", alpha=0.5)
-    p.line([1, 2, 3, 4, 5], [6, 7, 2, 4, 5], line_width=3, color="navy", alpha=0.5)
-    p.square([1, 2, 3, 4, 5], [2, 4, 8, 16,32], size=10, color="#88bbbb", alpha=1)
-    p.line([1, 2, 3, 4, 5], [2, 4, 8, 16,32], line_width=3, color="#88bbbb", alpha=1)
+    p.circle(range(len(datavalor)), datavalor, size=4, color="navy", alpha=0.5)
+    p.line(range(len(datavalor)), datavalor, line_width=3, color="navy", alpha=0.5)
+    p.square(range(len(datatiempo)), datatiempo, size=4, color="#88bbbb", alpha=1)
+    p.line(range(len(datatiempo)), datatiempo, line_width=3, color="#88bbbb", alpha=1)
     p.toolbar.logo = None
     p.toolbar_location = None
     script, div = components(p)

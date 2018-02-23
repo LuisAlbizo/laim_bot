@@ -11,19 +11,10 @@ import bot.juegos as j
 
 #Funciones utiles
 def segundosV(segundos):
-    dias = 0
-    horas = 0
-    minutos = 0
-    segundos = segundos
-    while segundos >= 60:
-        minutos+=1
-        segundos-=60
-    while minutos >= 60:
-        horas+=1
-        minutos-=60
-    while horas >= 24:
-        dias+=1
-        horas-=24
+    dias = int(segundos/DIA)
+    horas = int((segundos%DIA)/HORA)
+    minutos = int((segundos%HORA)/MINUTO)
+    segundos = segundos%MINUTO
     return {
         "dias" : dias,
         "horas" : horas,
@@ -870,7 +861,20 @@ async def cuenta(ctx):
 
 @bot.command(pass_context=True)
 async def perfil(ctx):
-    """Help"""
+    """
+    Comando para ver tu perfil del bot, necesitar ejecutar _reward primero.
+
+    Usa '_perfil' para simplemente ver tu perfil
+    Si quieres ver el perfil de otro usuario mencionalo despues de '_perfil '
+
+    Si quieres personalizar el estilo de tu perfil usa '_perfil *set var1="value1" var2="value2"'
+    donde varN es el estilo que quieres modificar y valueN es el estilo en CSS o una variable:
+        Estilos:
+            namecolor (color del texto del username)
+            background (imagen de fondo, tiene que ser un url)
+            desc (contenido de la descripcion, longitud menor a 200 caracteres)
+
+    """
     mention = re.search(r"<@\d{18}>",ctx.message.content)
     if mention:
         mention = mention.group()
@@ -888,6 +892,53 @@ async def perfil(ctx):
         cuenta=bank.obtenerCuenta(int(ctx.message.author.id))
         if not(cuenta):
             return await bot.say("Primero crea una cuenta con _reward")
+    db = sqlite3.connect(dbt)
+    db.execute("CREATE TABLE IF NOT EXISTS Styles(ID INTEGER PRIMARY KEY, style TEXT NOT NULL)")
+    db.commit()
+    cursor=db.execute("SELECT style FROM Styles WHERE ID=%i" % cuenta.getID())
+    try:
+        styles=next(cursor)
+        cursor.close()
+        styles=pickle.loads(base64.b64decode(styles[0].encode()))
+    except:
+        styles = {
+            'desc' : 'Hola Mundo',
+            'background' : '/static/images/pattern1.png',
+            'namecolor' : '#0f0f1f'
+        }
+        db.execute("INSERT INTO Styles VALUES(%i, '%s')" % (
+                cuenta.getID(),
+                base64.b64encode(pickle.dumps(styles)).decode()
+            )
+        )
+        db.commit()
+    propt = re.compile("_perfil (?P<opc>\\*[a-z]+) (?P<vars>([a-z]+=\"[^\"]*\" ?)+)")
+    propt = propt.match(ctx.message.content)
+    print(propt)
+    if propt:
+        propt = propt.groupdict()
+        varbs = [re.match('(?P<var>[a-z]+)="(?P<value>[^"]*)"', el).groupdict() 
+                for el in re.findall("[a-z]+=\"[^\"]*\"",propt['vars'])]
+        if propt["opc"]=="*set":
+            for el in varbs:
+                el=el
+                if el['value'] == '*image':
+                    if ctx.message.attachments:
+                        el['value'] = ctx.message.attachments[0]['url']
+                    else:
+                        await bot.say('Incluye una imagen en tu mensaje')
+                        continue
+                styles[el['var']] = el['value']
+            db.execute("UPDATE Styles SET style='%s' WHERE ID=%i" % (
+                    base64.b64encode(pickle.dumps(styles)).decode(),
+                    cuenta.getID()
+                )
+            )
+            db.commit()
+            await bot.say('Nuevos estilos: %s' % ', '.join([k+'='+styles[k] for k in styles]))
+        else:
+            pass
+    db.close()
     conn = socket.socket()
     try:
         conn.connect(("127.0.0.1",4300))
@@ -898,12 +949,15 @@ async def perfil(ctx):
     os.system("mkdir %sfiles/ph/%i" % (dirbot,idph))
     pkfile = "%sfiles/ph/%i/%i.pk" % (dirbot,idph,cuenta.getID())
     cuenta.actualizarSaldo()
+    data = bank.obtenerData(cuenta.getID())
     info = {
         "timestamp" : str(ctx.message.timestamp).split('.')[0],
         "cuenta" : cuenta.__json__(),
         "id" : cuenta.getID(),
         "username" : ctx.message.author.name,
-        "avatar" : ctx.message.author.avatar_url
+        "avatar" : ctx.message.author.avatar_url,
+        "data" : data,
+        "styles" : styles
     }
     with open(pkfile,'wb') as pkf:
         pickle.dump(info,pkf)
@@ -922,7 +976,7 @@ async def perfil(ctx):
             f.close()
     else:
         await bot.say("Error: "+resp[1])
-    #os.system("rm -r %sfiles/ph/%i/" % (dirbot,idph))
+    os.system("rm -r %sfiles/ph/%i/" % (dirbot,idph))
 
 @bot.command(pass_context=True)
 async def juntar(ctx):
@@ -967,22 +1021,6 @@ async def juntar(ctx):
     )
 
 @bot.command(pass_context=True)
-async def dividir(ctx):
-    """
-    Comando para dividir monedas
-    Las monedas deben durar mas de 2 minutos
-
-    Ejemplo:
-        _dividir FF:FA:1A:10
-    """
-    ids = re.compile(r"_dividir (?P<ids>([0-9A-Fa-f]{1,6}:?)+) ?(?P<div>\d+)")
-    match = ids.match(ctx.message.content)
-    if match:
-        ids=ids.groupdict()["ids"]
-    else:
-        return await bot.say("Formato incorrecto, usa _help dividir")
-
-@bot.command(pass_context=True)
 async def extraer(ctx):
     """
     Comando para extraer tiempo de una moneda
@@ -997,11 +1035,13 @@ async def extraer(ctx):
         DIA
         HORA
         MINUTO 
+        DURACION (que equivale a la duracion actual de la moneda menos 1 minuto)
 
-    y debes usar el operador '*' que sirve como multiplicador
+
+    Puedes usar los operadores *,-,+,/ que sirven para multiplicar, restar, sumar y dividir respectivamente
 
     """
-    ex = re.compile(r"_extraer (?P<id>[0-9A-Fa-f]{1,6}) (?P<evaluar>\d+\*?[a-zA-Z]*)")
+    ex = re.compile(r"_extraer (?P<id>[0-9A-Fa-f]{1,6}) (?P<evaluar>[a-zA-Z0-9/*+-]+)")
     match = ex.match(ctx.message.content)
     if match:
         ex=match.groupdict()
@@ -1013,10 +1053,13 @@ async def extraer(ctx):
     moneda = cuenta.obtenerMoneda(eval('0x'+ex['id']))
     if not(moneda):
         return await bot.say("La moneda %s no te pertenece" % ex['id'].upper())
+    DURACION = moneda.consultarExpiracion()-80
     try:
-        dur = eval(ex['evaluar'].upper())
+        dur = int(eval(ex['evaluar'].upper()))
     except NameError:
         return await bot.say("Variable desconocida: "+ex['evaluar'])
+    except Exception as e:
+        return await bot.say("Error matematico: "+str(e))
     ext = banco.ExtraerMoneda(moneda,dbt,dur)
     if ext[0]:
         cuenta.eliminarMoneda(moneda.getID())
@@ -1035,6 +1078,12 @@ async def extraer(ctx):
         cuenta.actualizarSaldo()
     else:
         await bot.say('No se puede extraer esa cantidad de tiempo')
+
+@bot.command(pass_context=True)
+async def rango(ctx):
+    cuenta=bank.obtenerCuenta(int(ctx.message.author.id))
+    if not(cuenta):
+        return await bot.say("Primero crea una cuenta con _reward")
 
 #Comandos para juego
 
@@ -1131,9 +1180,10 @@ async def blackjack(ctx):
         )
         dividir, _777 = False, False
         if j.valores[jugador["cartas"][0][0]] == j.valores[jugador["cartas"][1][0]]:
-            pass
+            '''
             opc+=", dividir"
-            dividir=True
+            dividir=True'''
+            pass
         if jugador["cartas"][0][0] == "7" and jugador["cartas"][1][0] == "7":
             opc+=", 777"
             _777=True
@@ -1284,11 +1334,12 @@ async def blackjack(ctx):
     fichas=j.regresarFichas(len(monedas))
     c.eliminarMoneda(moneda.getID())
     banco.deleteID(moneda.getID(),dbt)
-    print(fichas)
+    recompensa = []
     await bot.say(ctx.message.author.mention+"   **Recompensa obtenida: %i**" % sum(fichas))
     for f in fichas:
         nmoneda=banco.TMoneda(f,moneda.consultarExpiracion(),banco.makeID(dbt))
         c.agregarMoneda(nmoneda)
+        recompensa+=nmoneda.getID()
         m=nmoneda.__json__()
         s=segundosV(m["expiracion"])
         await bot.say("\n```\n%s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
@@ -1299,6 +1350,8 @@ async def blackjack(ctx):
             m["valor"]
             )
         )
+        if recompensa:
+            await bot.say(":".join([hex(i)[2:].upper() for i in recompensa]))
     c.actualizarSaldo()
 
 @bot.command(pass_context=True)
