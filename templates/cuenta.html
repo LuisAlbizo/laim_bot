@@ -74,6 +74,14 @@
 			*/
 		}
 		
+		.espacio {
+			width: 30px;
+		}
+
+		.rango {
+			color: #fff;
+		}
+
 		#avatar {
 			position: absolute;
 			width: 200px;
@@ -133,7 +141,14 @@
 				<h2>
 					Lista de rangos:
 				</h2>
-
+				{% for el in cuenta['rangos'] %}
+				<p class='rango'>
+				{{el}}
+				{{ ("<span class='glyphicon glyphicon-star'></span>"*int(el))|safe }}
+				<span class='espacio'></span>({{cuenta['rangos'][el]}})
+				</p>
+				{% endfor %}
+				</li>
 
 			</article>
 		</div>

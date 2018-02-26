@@ -94,7 +94,7 @@ class Actualizadora:
                 {'_id':self.__cuenta.getID()},
                 {'$push':{'data':{'data':self.__cuenta.__json__(),'time':int(time.time())}}}
             )
-            return [deleteID(m.getID(),self.__db) for m in r]
+            return [deleteID(m.getID(),db_accounts) for m in r]
         return actualizarCuenta
 
 class TMoneda:

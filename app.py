@@ -38,8 +38,8 @@ def profile():
         pkf.close()
     duracion = "%.2f dias" % (cuenta['cuenta']['saldo_duracion']/60/60/24)
     data = cuenta['data']
-    datavalor = [d['data']['saldo_valor'] for d in data]
-    datatiempo = [int(d['data']['saldo_duracion']/60/60) for d in data]
+    datavalor = [d['data']['saldo_valor'] for d in data[-20:]]
+    datatiempo = [int(d['data']['saldo_duracion']/60/60) for d in data[-20:]]
     #Plot
     p = figure(plot_width=400, plot_height=240,sizing_mode = 'scale_width',
         title = 'Relacion Duracion(horas)-Valor total')
@@ -50,7 +50,7 @@ def profile():
     p.toolbar.logo = None
     p.toolbar_location = None
     script, div = components(p)
-    return render_template('cuenta.html',cuenta=cuenta,duracion=duracion,script=script,div=div)
+    return render_template('cuenta.html',cuenta=cuenta,duracion=duracion,script=script,div=div,int=int)
 
 app.run(host="127.0.0.1",port=8080,debug=True)
 

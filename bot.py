@@ -527,6 +527,8 @@ async def t(ctx):
 async def reward(ctx):
     user = db.accounts.find_one(
         {'_id':int(ctx.message.author.id)},{'last_reward':True,'unique_reward':True})
+    if not(user):
+        user = {}
     if user.get('last_reward',False):
         if ctx.message.content[8:].strip().lower()=="-u":
             if user.get('unique_reward',False):
@@ -550,7 +552,7 @@ async def reward(ctx):
                         s["dias"],
                         s["horas"],
                         s["minutos"],
-                        nm.consultarValor()
+                        nuevamoneda.consultarValor()
                     )
                 )
             else:
@@ -769,6 +771,107 @@ async def cambiovalor(ctx):
         await bot.say("**Uso: '_cambio id1:id2:..:idN valor' donde id es la id de las monedas y un valor**")
 
 @bot.command(pass_context=True)
+async def juntar(ctx):
+    """
+    Comando para fusionar monedas
+    Las monedas deben tener el mismo valor
+
+    Ejemplo:
+        _juntar FF:FA:1A:10
+    """
+    ids = re.compile(r"_juntar (?P<ids>([0-9A-Fa-f]{1,6}:?)+)")
+    match = ids.match(ctx.message.content)
+    if match:
+        ids=match.groupdict()["ids"].split(":")
+        if len(ids)<2:
+            return await bot.say("No puedes fusionar menos de 2 monedaa")
+    else:
+        return await bot.say("Formato incorrecto, usa _help juntar")
+    cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
+    if not(cuenta):
+        return await bot.say("Primero crea una cuenta con _reward")
+    monedas = [cuenta.obtenerMoneda(eval("0x"+str(mid))) for mid in ids]
+    if not(monedas):
+        return await bot.say("Ninguna de esas monedas te pertenece")
+    valor = monedas[0].consultarValor()
+    if not(all([m.consultarValor()==valor for m in monedas])):
+        return await bot.say("Las monedas tienen valores distintos")
+    for m in monedas:
+        cuenta.eliminarMoneda(m.getID())
+        banco.deleteID(m.getID(),db)
+    nmoneda = banco.FusionarMonedas(monedas,banco.makeID(db))
+    cuenta.agregarMoneda(nmoneda)
+    cuenta.actualizarSaldo()
+    m=cuenta.obtenerMoneda(nmoneda.getID()).__json__()
+    s=segundosV(m["expiracion"])
+    await bot.say(
+        "\n```\nNueva %s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
+        hex(m["ID"])[2:].upper(),
+        s["dias"],s["horas"],s["minutos"],
+        m["valor"]
+        )
+    )
+
+@bot.command(pass_context=True)
+async def extraer(ctx):
+    """
+    Comando para extraer tiempo de una moneda
+
+    Ejemplo:
+        _extraer FF 3*HORA
+
+    Esto extrae una moneda de duracion de 3 horas y el mismo valor que FF, restandole a FF 3 horas de tiempo
+    FF debe durar mas tiempo del que quieres extraer
+
+    Por defecto el numero que escribas seran segundos, pero puedes multiplicar los segundos con estas variables:
+        DIA
+        HORA
+        MINUTO 
+        DURACION (que equivale a la duracion actual de la moneda menos 1 minuto)
+
+
+    Puedes usar los operadores *,-,+,/ que sirven para multiplicar, restar, sumar y dividir respectivamente
+
+    """
+    ex = re.compile(r"_extraer (?P<id>[0-9A-Fa-f]{1,6}) (?P<evaluar>[a-zA-Z0-9/*+-]+)")
+    match = ex.match(ctx.message.content)
+    if match:
+        ex=match.groupdict()
+    else:
+        return await bot.say("Formato incorrecto, usa _help extraer")
+    cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
+    if not(cuenta):
+        return await bot.say("Primero crea una cuenta con _reward")
+    moneda = cuenta.obtenerMoneda(eval('0x'+ex['id']))
+    if not(moneda):
+        return await bot.say("La moneda %s no te pertenece" % ex['id'].upper())
+    DURACION = moneda.consultarExpiracion()-80
+    try:
+        dur = int(eval(ex['evaluar'].upper()))
+    except NameError:
+        return await bot.say("Variable desconocida: "+ex['evaluar'])
+    except Exception as e:
+        return await bot.say("Error matematico: "+str(e))
+    ext = banco.ExtraerMoneda(moneda,db,dur)
+    if ext[0]:
+        cuenta.eliminarMoneda(moneda.getID())
+        cuenta.agregarMoneda(ext[1])
+        cuenta.agregarMoneda(ext[2])
+        for m in [ext[1],ext[2]]:
+            m = m.__json__()
+            s=segundosV(m["expiracion"])
+            await bot.say(
+                "\n```\nNueva %s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
+                hex(m["ID"])[2:].upper(),
+                s["dias"],s["horas"],s["minutos"],
+                m["valor"]
+                )
+            )
+        cuenta.actualizarSaldo()
+    else:
+        await bot.say('No se puede extraer esa cantidad de tiempo')
+
+@bot.command(pass_context=True)
 async def cuenta(ctx):
     """
     Comando para ver informacion de una cuenta:
@@ -891,6 +994,12 @@ async def perfil(ctx):
         cuenta=bank.obtenerCuenta(int(ctx.message.author.id))
         if not(cuenta):
             return await bot.say("Primero crea una cuenta con _reward")
+
+    user = db.accounts.find_one({'_id':cuenta.getID()},{'rangos':True})
+    if 'rangos' not in user:
+        db.accounts.update_one({'_id':cuenta.getID()},{'$set':{'rangos':{}}})
+        user = db.accounts.find_one({'_id':cuenta.getID()},{'rangos':True})
+    rangos = user['rangos']
     styles = db.accounts.find_one({'_id':cuenta.getID()},{'styles':True})
     if 'styles' in styles:
         styles=styles['styles']
@@ -932,14 +1041,20 @@ async def perfil(ctx):
     pkfile = "%sfiles/ph/%i/%i.pk" % (dirbot,idph,cuenta.getID())
     cuenta.actualizarSaldo()
     data = bank.obtenerData(cuenta.getID())
+    user = discord.member.utils.find(lambda m: m.id == mention[2:-1],
+        ctx.message.channel.server.members
+    )
+    avatar = user.avatar_url
+    username = user.name
     info = {
         "timestamp" : str(ctx.message.timestamp).split('.')[0],
         "cuenta" : cuenta.__json__(),
         "id" : cuenta.getID(),
-        "username" : ctx.message.author.name,
-        "avatar" : ctx.message.author.avatar_url,
-        "data" : data,
-        "styles" : styles
+        "username" : username,
+        "avatar" : avatar,
+        "data" : data, 
+        "styles" : styles,
+        'rangos' : rangos
     }
     with open(pkfile,'wb') as pkf:
         pickle.dump(info,pkf)
@@ -961,111 +1076,77 @@ async def perfil(ctx):
     os.system("rm -r %sfiles/ph/%i/" % (dirbot,idph))
 
 @bot.command(pass_context=True)
-async def juntar(ctx):
-    """
-    Comando para fusionar monedas
-    Las monedas deben tener el mismo valor
-
-    Ejemplo:
-        _juntar FF:FA:1A:10
-    """
-    ids = re.compile(r"_juntar (?P<ids>([0-9A-Fa-f]{1,6}:?)+)")
-    match = ids.match(ctx.message.content)
-    if match:
-        ids=match.groupdict()["ids"].split(":")
-        if len(ids)<2:
-            return await bot.say("No puedes fusionar menos de 2 monedaa")
-    else:
-        return await bot.say("Formato incorrecto, usa _help juntar")
-    cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
-    if not(cuenta):
-        return await bot.say("Primero crea una cuenta con _reward")
-    monedas = [cuenta.obtenerMoneda(eval("0x"+str(mid))) for mid in ids]
-    if not(monedas):
-        return await bot.say("Ninguna de esas monedas te pertenece")
-    valor = monedas[0].consultarValor()
-    if not(all([m.consultarValor()==valor for m in monedas])):
-        return await bot.say("Las monedas tienen valores distintos")
-    for m in monedas:
-        cuenta.eliminarMoneda(m.getID())
-        banco.deleteID(m.getID(),db)
-    nmoneda = banco.FusionarMonedas(monedas,banco.makeID(db))
-    cuenta.agregarMoneda(nmoneda)
-    cuenta.actualizarSaldo()
-    m=cuenta.obtenerMoneda(nmoneda.getID()).__json__()
-    s=segundosV(m["expiracion"])
-    await bot.say(
-        "\n```\nNueva %s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
-        hex(m["ID"])[2:].upper(),
-        s["dias"],s["horas"],s["minutos"],
-        m["valor"]
-        )
-    )
-
-@bot.command(pass_context=True)
-async def extraer(ctx):
-    """
-    Comando para extraer tiempo de una moneda
-
-    Ejemplo:
-        _extraer FF 3*HORA
-
-    Esto extrae una moneda de duracion de 3 horas y el mismo valor que FF, restandole a FF 3 horas de tiempo
-    FF debe durar mas tiempo del que quieres extraer
-
-    Por defecto el numero que escribas seran segundos, pero puedes multiplicar los segundos con estas variables:
-        DIA
-        HORA
-        MINUTO 
-        DURACION (que equivale a la duracion actual de la moneda menos 1 minuto)
-
-
-    Puedes usar los operadores *,-,+,/ que sirven para multiplicar, restar, sumar y dividir respectivamente
-
-    """
-    ex = re.compile(r"_extraer (?P<id>[0-9A-Fa-f]{1,6}) (?P<evaluar>[a-zA-Z0-9/*+-]+)")
-    match = ex.match(ctx.message.content)
-    if match:
-        ex=match.groupdict()
-    else:
-        return await bot.say("Formato incorrecto, usa _help extraer")
-    cuenta = bank.obtenerCuenta(int(ctx.message.author.id))
-    if not(cuenta):
-        return await bot.say("Primero crea una cuenta con _reward")
-    moneda = cuenta.obtenerMoneda(eval('0x'+ex['id']))
-    if not(moneda):
-        return await bot.say("La moneda %s no te pertenece" % ex['id'].upper())
-    DURACION = moneda.consultarExpiracion()-80
-    try:
-        dur = int(eval(ex['evaluar'].upper()))
-    except NameError:
-        return await bot.say("Variable desconocida: "+ex['evaluar'])
-    except Exception as e:
-        return await bot.say("Error matematico: "+str(e))
-    ext = banco.ExtraerMoneda(moneda,db,dur)
-    if ext[0]:
-        cuenta.eliminarMoneda(moneda.getID())
-        cuenta.agregarMoneda(ext[1])
-        cuenta.agregarMoneda(ext[2])
-        for m in [ext[1],ext[2]]:
-            m = m.__json__()
-            s=segundosV(m["expiracion"])
-            await bot.say(
-                "\n```\nNueva %s:{\n\tduracion: %i dias,%i horas,%i minutos\n\tvalor: %i\n}```" % (
-                hex(m["ID"])[2:].upper(),
-                s["dias"],s["horas"],s["minutos"],
-                m["valor"]
-                )
-            )
-        cuenta.actualizarSaldo()
-    else:
-        await bot.say('No se puede extraer esa cantidad de tiempo')
-
-@bot.command(pass_context=True)
 async def rango(ctx):
+    """
+    Comando para comprar rangos.
+
+    Usa '_rango' para ver tus rangos e informacion
+    Usa '_rango get N id1:id2:id3' para comprar el rango N 
+        N es el rango que quieres comprar y debe ser un entero positivo
+        id son las id's de la(s) monedas que usaras para comprar el rango
+        Nota: Las monedas obligatoriamente deben sumar el valor que cuesta el rango y al menos 12 horas.
+
+    Los rangos son un numero de estrellas, y cada rango cuesta el doble valor del anterior.
+
+    El rango 1 estrella cuesta 10,000.
+    El rango 2 estrellas cuesta 20,000.
+    El rango 3 estrellas cuesta 40,000.
+    etc.
+    """
     cuenta=bank.obtenerCuenta(int(ctx.message.author.id))
     if not(cuenta):
         return await bot.say("Primero crea una cuenta con _reward")
+    user = db.accounts.find_one({'_id':cuenta.getID()},{'rangos':True})
+    if 'rangos' not in user:
+        db.accounts.update_one({'_id':cuenta.getID()},{'$set':{'rangos':{}}})
+        user = db.accounts.find_one({'_id':cuenta.getID()},{'rangos':True})
+    rangos = user['rangos']
+    ids = re.compile(r"_rango ?(?P<opcion>\w+)? ?(?P<rango>\d+)? ?(?P<ids>([0-9A-Fa-f]{1,6}:?)+)?")
+    match = ids.match(ctx.message.content)
+    if match:
+        if match.groupdict().get('opcion')=='get':
+            if match.groupdict().get('ids'):
+                ids=[eval('0x'+el) for el in match.groupdict()["ids"].split(":")]
+                cuenta.actualizarSaldo()
+                monedas = [cuenta.obtenerMoneda(mid) for mid in ids]
+                if not(all(monedas)):
+                    return await bot.say('No te pertenecen todas esas monedas')
+                valor = sum([m.consultarValor() for m in monedas])
+                duracion = sum([m.consultarExpiracion() for m in monedas])
+                rango = int(match.groupdict()["rango"])
+                valorR = 10000*(2**(rango-1))
+                if valor != valorR:
+                    return await bot.say('Se requieren: %i, tus monedas suman: %i' % (valorR,valor))
+                if duracion <= 12*HORA:
+                    return await bot.say('No se completa la duracion necesaria de 12 horas. (%.2f)' % (
+                        duracion/HORA
+                        
+                    )
+                )
+                [cuenta.eliminarMoneda(idm) for idm in ids]
+                rango = str(rango)
+                if rango in user['rangos']:
+                    user['rangos'][rango] = int(user['rangos'][rango])+1
+                else:
+                    user['rangos'][rango] = 1
+                db.accounts.update_one({'_id':cuenta.getID()},{'$set':{'rangos':user['rangos']}})
+                cuenta.actualizarSaldo()
+                await bot.say('Ahora tienes el rango %s estrellas' % rango)
+            else:
+                await bot.say('El rango %s estrellas cuesta: %i' % (
+                    match.groupdict()["rango"],
+                    10000*(2**(int(match.groupdict()["rango"])-1))
+                    )
+                )
+        else:
+            if rangos:
+               await bot.say('%s Rangos:\n```\nRango:\t\t\tCantidad\n\n%s```' % (
+                    ctx.message.author.mention,
+                    '\n'.join(['%s estrellas\t\t(%i)' % (el,rangos[el]) for el in rangos.keys()])
+                    )
+                )
+            else:
+                await bot.say('No tienes ningun rango')
 
 #Comandos para juego
 
@@ -1100,9 +1181,6 @@ async def blackjack(ctx):
         await bot.say("ID de moneda no valida: "+params[0])
         return
     div=int(moneda.consultarValor())
-    if len(params)>1:
-        if re.fullmatch(r"10+",params[1]):
-            div=int(params[1])
     msg = await bot.say("Dividiendo %s entre %i..." % (params[0],div))
     if moneda.consultarValor()<div:
         await bot.edit_message(msg,
@@ -1113,22 +1191,19 @@ async def blackjack(ctx):
             )
         )
         return
-    monedas=[]
-    await bot.say("Nueva ronda",delete_after=2.0)
-    for el in range(div):
-        _,nmoneda = banco.TCambio(banco.ClonarMoneda(moneda),"t")
-        for el in range(int(math.log10(div))-1):
-            _,nmoneda = banco.TCambio(nmoneda,"t")
-        monedas.append(nmoneda)
+    _,nmoneda = banco.TCambio(banco.ClonarMoneda(moneda),"t")
+    for el in range(int(math.log10(div))-1):
+        _,nmoneda = banco.TCambio(nmoneda,"t")
+    monedas=div
     rp = j.Repartidor(j.masobj*6)
     await bot.delete_message(msg)
     info = await bot.send_message(canal,"Cargando info...")
     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-        len(monedas),monedas[0].consultarExpiracion()/60/60
+        monedas,nmoneda.consultarExpiracion()/60/60
     ))
     ronda = await bot.send_message(canal,"...")
     while True:
-        apuestm = await bot.say("Cuanto quieres apostar? (escribe un numero de fichas del 1 al " + str(len(monedas)))
+        apuestm = await bot.say("Cuanto quieres apostar? (1 - " + str(monedas))
         while True:
             apuesta = await bot.wait_for_message(channel=canal,author=ctx.message.author,
                 check=lambda x: x.content.isdigit(),timeout=30)
@@ -1139,17 +1214,17 @@ async def blackjack(ctx):
                 return
             await bot.delete_message(apuesta)
             apuestc = int(apuesta.content)
-            if apuestc>len(monedas):
+            if apuestc>monedas:
                 await bot.say("No tienes tantas fichas, di otro numero",delete_after=6.0)
             else:
-                monedas=monedas[apuestc:]
+                monedas=monedas-apuestc
                 await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                    len(monedas),nmoneda.consultarExpiracion()/60/60
+                    monedas,nmoneda.consultarExpiracion()/60/60
                 ))
                 break
         await bot.delete_message(apuestm)
         await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-            len(monedas),nmoneda.consultarExpiracion()/60/60
+            monedas,nmoneda.consultarExpiracion()/60/60
         ))
         if rp.cuantashay()<20:
             rp.agregarcartas(j.masobj*6)
@@ -1184,25 +1259,25 @@ async def blackjack(ctx):
                     seguro = True
                 await bot.delete_message(opcion)
             if seguro:
-                if len(monedas)<apuestc:
+                if monedas<apuestc:
                     await bot.say("No tienes suficientes fichas para apostar por seguro",delete_after=6.0)
                     seguro = False
                 else:
-                    monedas=monedas[apuestc:]
+                    monedas=monedas-apuestc
                     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                        len(monedas),nmoneda.consultarExpiracion()/60/60
+                        monedas,nmoneda.consultarExpiracion()/60/60
                     ))
             if j.valores[dealer["cartas"][1][0]]==[10]:
                 if seguro:
-                    monedas+=[banco.ClonarMoneda(nmoneda) for i in range(apuestc*2)]
+                    monedas+=(apuestc*2)
                     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                        len(monedas),nmoneda.consultarExpiracion()/60/60
+                        monedas,nmoneda.consultarExpiracion()/60/60
                     ))
                     if 21 in jugador["valores"]:
-                        monedas+=[banco.ClonarMoneda(nmoneda) for i in range(apuestc)]
+                        monedas+=apuestc
                         await bot.edit_message(info,
                         "**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                            len(monedas),nmoneda.consultarExpiracion()/60/60
+                            monedas,nmoneda.consultarExpiracion()/60/60
                         ))
                 continue
         while True:
@@ -1222,13 +1297,13 @@ async def blackjack(ctx):
         elif opcion == "mantener":
             pass
         elif opcion == "doblar":
-            if len(monedas)>=apuestc:
-                monedas=monedas[apuestc:]
+            if monedas>=apuestc:
+                monedas=monedas-apuestc
                 apuestc*=2
             else:
                 await bot.say("No puedes doblar porque no tienes suficientes fichas",delete_after=6.0)
             await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                len(monedas),nmoneda.consultarExpiracion()/60/60
+                monedas,nmoneda.consultarExpiracion()/60/60
             ))
             jugador = j.bjpedir(jugador,rp)
             playercards=", ".join(jugador["cartas"])
@@ -1241,10 +1316,10 @@ async def blackjack(ctx):
         elif opcion == "dividir" and dividir:
             pass
         elif opcion == "777" and _777:
-            if len(monedas)>=apuestc*2:
-                monedas=monedas[apuestc*2:]
+            if monedas>=apuestc*2:
+                monedas=monedas-(apuestc*2)
                 await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                    len(monedas),monedas[0].consultarExpiracion()/60/60
+                    monedas,nmoneda.consultarExpiracion()/60/60
                 ))
                 jugador = j.bjpedir(jugador,rp)
                 playercards=", ".join(jugador["cartas"])
@@ -1252,9 +1327,9 @@ async def blackjack(ctx):
                 playercards = "{%s (%i)}" % (playercards,playervalor)
                 await bot.edit_message(ronda,playercards.join(re.split(r"\{[^\}]+\}",opc))+"\n```")
                 if all([c[0]=="7" for c in jugador["cartas"]]):
-                    monedas+=[banco.ClonarMoneda(nmoneda) for _ in range(apuestc*10)]
+                    monedas+=(apuestc*10)
                     await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-                        len(monedas),nmoneda.consultarExpiracion()/60/60
+                        monedas,nmoneda.consultarExpiracion()/60/60
                     ))
                 elif playervalor>21:
                     ploses=True
@@ -1274,8 +1349,8 @@ async def blackjack(ctx):
                     ploses=True
                     break
                 else:
-                    await bot.say("Quieres pedir otra carta? (si/no)",delete_after=4.0)
-                    pedir = await bot.wait_for_message(channel=canal,author=ctx.message.author,timeout=4)
+                    await bot.say("Quieres pedir otra carta? (si/no)",delete_after=5.0)
+                    pedir = await bot.wait_for_message(channel=canal,author=ctx.message.author,timeout=12)
                     if pedir:
                         await bot.delete_message(pedir)
                         if pedir.content.lower()=="no":
@@ -1301,21 +1376,21 @@ async def blackjack(ctx):
         pv,dv=j.bjvalor(jugador),dealervalor
         if dv>21 or pv>dv:
             await bot.say("Ganaste",delete_after=2.0)
-            if pv==21:
-                monedas+=[banco.ClonarMoneda(nmoneda) for _ in range(apuestc*3)]
+            if pv==21 and len(jugador['cartas'])==2:
+                monedas+=(apuestc*3)
             else:
-                monedas+=[banco.ClonarMoneda(nmoneda) for _ in range(apuestc*2)]
+                monedas+=(apuestc*2)
         elif dv==pv:
             await bot.say("Empate",delete_after=2.0)
-            monedas+=[banco.ClonarMoneda(nmoneda) for _ in range(apuestc)]
+            monedas+=(apuestc)
         elif dv>pv:
             await bot.say("Perdiste",delete_after=2.0)
         await bot.edit_message(info,"**Fichas: %i**\n**Tiempo de cada ficha: %.2f (horas)**" % (
-            len(monedas),nmoneda.consultarExpiracion()/60/60
+            monedas,nmoneda.consultarExpiracion()/60/60
         ))
     await bot.delete_message(info)
     await bot.delete_message(ronda)
-    fichas=j.regresarFichas(len(monedas))
+    fichas=j.regresarFichas(monedas)
     c.eliminarMoneda(moneda.getID())
     banco.deleteID(moneda.getID(),db)
     recompensa = []
@@ -1334,8 +1409,8 @@ async def blackjack(ctx):
             m["valor"]
             )
         )
-        if recompensa:
-            await bot.say(":".join([hex(i)[2:].upper() for i in recompensa]))
+    if recompensa:
+        await bot.say(":".join([hex(i)[2:].upper() for i in recompensa]))
     c.actualizarSaldo()
 
 @bot.command(pass_context=True)
