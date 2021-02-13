@@ -3,12 +3,13 @@ import pickle
 from discord.ext import commands
 from functools import reduce
 from pymongo import MongoClient
-from bot.banco import DIA, HORA, MINUTO
 from .fortunas import fortunas
 import bot.scraper as scraper
 import bot.hchan as hchan
-import bot.banco as banco
-import bot.juegos as j
+
+MINUTO = 60
+HORA = 60*MINUTO
+DIA = 24*HORA
 
 #Funciones utiles
 def segundosV(segundos):
@@ -28,7 +29,6 @@ bot = commands.Bot(command_prefix="_")
 dirbot = "./"
 client = MongoClient()
 db = client.laimbot
-bank = banco.TBanco(db)
 init_time = None
 
 @bot.event
