@@ -2,7 +2,6 @@ import discord, random, time, re, datetime, os, threading, math, asyncio, socket
 import pickle
 from discord.ext import commands
 from functools import reduce
-from pymongo import MongoClient
 from .fortunas import fortunas
 import bot.scraper as scraper
 import bot.hchan as hchan
@@ -27,8 +26,6 @@ def segundosV(segundos):
 #Bot
 bot = commands.Bot(command_prefix="_")
 dirbot = "./"
-client = MongoClient()
-db = client.laimbot
 init_time = None
 
 @bot.event
@@ -76,25 +73,12 @@ async def quien(ctx):
     await ctx.send(m)
 
 @bot.command(pass_context=True)
-async def ss(ctx):
-    if int(ctx.message.guild.id) == 301217828307075073:
-        with open("bot/files/ss/"+random.choice(os.listdir("bot/files/ss")), "rb") as f:
-            await bot.send_file(ctx.message.channel,f)
-            f.close()
-    else:
-        await ctx.send("comando no disponible en este servidor")
-
-@bot.command(pass_context=True)
 async def siono(ctx):
     await ctx.send(random.choice(["Cy","\xf1o"]))
 
 @bot.command(pass_context=True)
 async def escoje(ctx):
     await ctx.send("Yo creo que " + random.choice(ctx.message.content.split(" ")[1:]))
-
-@bot.command(pass_context=True)
-async def dank(ctx):
-    await ctx.send(":joy: :ok_hand:")
 
 @bot.command(pass_context=True)
 async def fortuna(ctx):
@@ -115,16 +99,19 @@ async def fortuna(ctx):
 async def chan(ctx):
     message = ctx.message
     fm = await ctx.send(scraper.main_screen())
-    msg = await bot.wait_for_message(author=message.author,timeout=15,check=lambda c: c.content[0]=='/')
-    if not(msg):
-        await bot.delete_message(fm)
+    try:
+        msg = await bot.wait_for("message", timeout=15,
+            check=lambda m: m.content[0]=='/' and m.content[-1]=='/'
+            and m.author==message.author)
+    except asyncio.TimeoutError:
+        await fm.delete()
         return
-    await bot.delete_message(fm)
+    await fm.delete()
     response = scraper.goto_board(msg.content.strip())
     if response["error"]:
         fm = await ctx.send(response["content"])
         time.sleep(5)
-        await bot.delete_message(fm)
+        await fm.delete()
         return
     else:
         fm = await ctx.send(response["content"][0])
@@ -134,82 +121,85 @@ async def chan(ctx):
             el = hilos[i-1]
             page = await ctx.send(el)
             if i>1:
-                await bot.add_reaction(page,"\u25C0")#anterior
+                await page.add_reaction("\u25C0")#anterior
             if i<15:
-                await bot.add_reaction(page,"\u25B6")#siguiente
-            await bot.add_reaction(page,"\u2611")#seleccionar
-            await bot.add_reaction(page,"\u274E")#quitar
-            opc = await bot.wait_for_reaction(
-                    ["\u25C0","\u25B6","\u2611","\u274E"],user=message.author,message=page,timeout=15)
-            if not(opc):
-                await bot.delete_message(fm)
-                await bot.delete_message(page)
+                await page.add_reaction("\u25B6")#siguiente
+            await page.add_reaction("\u2611")#seleccionar
+            await page.add_reaction("\u274E")#quitar
+            try:
+                opc, user = await bot.wait_for("reaction_add",
+                    check = (lambda reaction, user:
+                    reaction.emoji in 
+                    ["\u25C0","\u25B6","\u2611","\u274E"] and 
+                    user == message.author),
+                    timeout=15)
+            except asyncio.TimeoutError:
+                await fm.delete()
+                await page.delete()
                 return
-            else:
-                await bot.delete_message(page)
-                if opc.reaction.emoji=="\u25C0":
-                    i-=1
-                    pass
-                elif opc.reaction.emoji=="\u25B6":
-                    i+=1
-                    pass
-                elif opc.reaction.emoji=="\u2611":
-                    break
-                elif opc.reaction.emoji=="\u274E":
-                    return
-        await bot.delete_message(fm)
+            await page.delete()
+            if opc.emoji=="\u25C0":
+                i-=1
+                pass
+            elif opc.emoji=="\u25B6":
+                i+=1
+                pass
+            elif opc.emoji=="\u2611":
+                break
+            elif opc.emoji=="\u274E":
+                await fm.delete()
+                return
+        await fm.delete()
         ids=i
         i=0
         imgs = list(scraper.get_thread_files(response["threads"][ids]["post_url"]))
         page = await ctx.send("loading...")
         while True:
             img = imgs[i]
-            await bot.edit_message(page,(("image %i of %i\n" % (i+1,len(imgs)))+img))
+            await page.edit(content=(("image %i of %i\n" % (i+1,len(imgs)))+img))
             if i>0:
-                await bot.add_reaction(page,"\u25C0")#anterior
+                await page.add_reaction("\u25C0")#anterior
             if i<len(imgs)-1:
-                await bot.add_reaction(page,"\u25B6")#siguiente
-            await bot.add_reaction(page,"\u2611")#seleccionar
-            await bot.add_reaction(page,"\u274E")#quitar
-            opc = await bot.wait_for_reaction(
-                    ["\u25C0","\u25B6","\u2611","\u274E"],user=message.author,message=page,timeout=15)
-            if not(opc):
+                await page.add_reaction("\u25B6")#siguiente
+            await page.add_reaction("\u2611")#seleccionar
+            await page.add_reaction("\u274E")#quitar
+            try:
+                opc, user = await bot.wait_for("reaction_add", check = (
+                lambda reaction, user:
+                reaction.emoji in ["\u25C0","\u25B6","\u2611","\u274E"]
+                and user == message.author), timeout=15)
+            except asyncio.TimeoutError:
                 for emoji in ["\u25C0","\u25B6","\u2611","\u274E"]:
                     try:
-                        await bot.remove_reaction(page,emoji,
-                            discord.member.utils.find(lambda m: m.id == "401391614838439936",
-                                message.channel.server.members
-                                )
-                            )
+                        await page.remove_reaction(emoji, bot.user)
                     except:
                         pass
                 return
-            else:
-                emoji=opc.reaction.emoji
-                try:
-                    await bot.remove_reaction(page,emoji,message.author)
-                except:
-                    pass
-                if emoji=="\u25C0":
-                    i=i-1
-                    pass
-                elif emoji=="\u25B6":
-                    i+=1
-                    pass
-                elif emoji=="\u2611":
-                    for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
-                        try:
-                            await bot.remove_reaction(page,e,
-                                discord.member.utils.find(lambda m: m.id == "401391614838439936",
-                                    message.channel.server.members
-                                    )
-                                )
-                        except:
-                            pass
-                    return
-                elif emoji=="\u274E":
-                    await bot.delete_message(page)
-                    return
+            emoji=opc.emoji
+            try:
+                await page.remove_reaction(emoji,message.author)
+            except:
+                pass
+            if emoji=="\u25C0":
+                i=i-1
+                if not(i):
+                    await page.remove_reaction(emoji, bot.user)
+                pass
+            elif emoji=="\u25B6":
+                i+=1
+                if i==len(img)-1:
+                    await page.remove_reaction(emoji, bot.user)
+                pass
+            elif emoji=="\u2611":
+                for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
+                    try:
+                        await page.remove_reaction(e, bot.user)
+                    except:
+                        pass
+                return
+            elif emoji=="\u274E":
+                await page.delete()
+                return
         return
 
 @bot.command(pass_context=True)
@@ -217,15 +207,17 @@ async def hispa(ctx):
     global hchan
     message = ctx.message
     fm = await ctx.send(hchan.main_screen())
-    msg = await bot.wait_for_message(author=message.author,timeout=35,check=lambda c: c.content[0]=='/')
-    await bot.delete_message(fm)
-    if not(msg):
+    try:
+        msg = await bot.wait_for("message", timeout=35, check=lambda c: c.content[0]=='/' and c.content[-1]=='/' and c.author == message.author)
+        await fm.delete()
+    except asyncio.TimeoutError:
+        await fm.delete()
         return
     response = hchan.goto_board(msg.content.strip())
     if response["error"]:
         fm = await ctx.send(response["content"])
         time.sleep(5)
-        await bot.delete_message(fm)
+        await fm.delete()
         return
     else:
         fm = await ctx.send(response["content"][0])
@@ -235,177 +227,88 @@ async def hispa(ctx):
             el = hilos[i-1]
             page = await ctx.send(el)
             if i>1:
-                await bot.add_reaction(page,"\u25C0")#anterior
+                await page.add_reaction("\u25C0")#anterior
             if i<13:
-                await bot.add_reaction(page,"\u25B6")#siguiente
-            await bot.add_reaction(page,"\u2611")#seleccionar
-            await bot.add_reaction(page,"\u274E")#quitar
-            opc = await bot.wait_for_reaction(
-                    ["\u25C0","\u25B6","\u2611","\u274E"],user=message.author,message=page,timeout=45)
-            if not(opc):
-                await bot.delete_message(fm)
-                await bot.delete_message(page)
+                await page.add_reaction("\u25B6")#siguiente
+            await page.add_reaction("\u2611")#seleccionar
+            await page.add_reaction("\u274E")#quitar
+            try:
+                opc, user = await bot.wait_for("reaction_add", check=lambda
+                    reaction, user: reaction.emoji in
+                    ["\u25C0","\u25B6","\u2611","\u274E"] and
+                    user == message.author,
+                    timeout=45)
+            except asyncio.TimeoutError:
+                await fm.delete()
+                await page.delete()
                 return
-            else:
-                await bot.delete_message(page)
-                if opc.reaction.emoji=="\u25C0":
-                    i-=1
-                    pass
-                elif opc.reaction.emoji=="\u25B6":
-                    i+=1
-                    pass
-                elif opc.reaction.emoji=="\u2611":
-                    break
-                elif opc.reaction.emoji=="\u274E":
-                    return
-        await bot.delete_message(fm)
+            await page.delete()
+            if opc.emoji=="\u25C0":
+                i-=1
+                pass
+            elif opc.emoji=="\u25B6":
+                i+=1
+                pass
+            elif opc.emoji=="\u2611":
+                break
+            elif opc.emoji=="\u274E":
+                return
+        await fm.delete()
         ids=i
         i=0
         imgs = list(hchan.get_thread_files(response["threads"][ids]["post_url"]))
         page = await ctx.send("Cargando...")
         while True:
             img = imgs[i]
-            await bot.edit_message(page,(("Imagen %i de %i\n" % (i+1,len(imgs)))+img))
+            await page.edit(content=(("Imagen %i de %i\n" % (i+1,len(imgs)))+img))
             if i>0:
-                await bot.add_reaction(page,"\u25C0")#anterior
+                await page.add_reaction("\u25C0")#anterior
             else:
                 try:
-                    await bot.remove_reaction(page,"\u25C0",
-                        discord.member.utils.find(lambda m: m.id == "401391614838439936",
-                            message.channel.server.members
-                        )
-                    )
+                    await page.remove_reaction("\u25C0", bot.user)
                 except:
                     pass
             if i<len(imgs)-1:
-                await bot.add_reaction(page,"\u25B6")#siguiente
+                await page.add_reaction("\u25B6")#siguiente
             else:
-                await bot.remove_reaction(page,"\u25B6",
-                    discord.member.utils.find(lambda m: m.id == "401391614838439936",
-                        message.channel.server.members
-                    )
-                )
-
-            await bot.add_reaction(page,"\u2611")#seleccionar
-            await bot.add_reaction(page,"\u274E")#quitar
-            opc = await bot.wait_for_reaction(
-                    ["\u25C0","\u25B6","\u2611","\u274E"],user=message.author,message=page,timeout=35)
-            if not(opc):
+                await page.remove_reaction("\u25B6", bot.user)
+            await page.add_reaction("\u2611")#seleccionar
+            await page.add_reaction("\u274E")#quitar
+            try:
+                opc, user = await bot.wait_for("reaction_add", check=lambda
+                        reaction, user: reaction.emoji in 
+                        ["\u25C0","\u25B6","\u2611","\u274E"] and
+                        user == message.author,timeout=15)
+            except asyncio.TimeoutError:
                 for emoji in ["\u25C0","\u25B6","\u2611","\u274E"]:
                     try:
-                        await bot.remove_reaction(page,emoji,
-                            discord.member.utils.find(lambda m: m.id == "401391614838439936",
-                                message.channel.server.members
-                                )
-                            )
+                        await page.remove_reaction(emoji, bot.user)
                     except:
                         pass
                 return
-            else:
-                emoji=opc.reaction.emoji
-                try:
-                    await bot.remove_reaction(page,emoji,message.author)
-                except:
-                    pass
-                if emoji=="\u25C0":
-                    i=i-1
-                    pass
-                elif emoji=="\u25B6":
-                    i+=1
-                    pass
-                elif emoji=="\u2611":
-                    for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
-                        try:
-                            await bot.remove_reaction(page,e,
-                                discord.member.utils.find(lambda m: m.id == "401391614838439936",
-                                    message.channel.server.members
-                                    )
-                                )
-                        except:
-                            pass
-                    return
-                elif emoji=="\u274E":
-                    await bot.delete_message(page)
-                    return
+            emoji=opc.emoji
+            try:
+                await page.remove_reaction(emoji, message.author)
+            except:
+                pass
+            if emoji=="\u25C0":
+                i=i-1
+                pass
+            elif emoji=="\u25B6":
+                i+=1
+                pass
+            elif emoji=="\u2611":
+                for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
+                    try:
+                        await page.remove_reaction(e, bot.user)
+                    except:
+                        pass
+                return
+            elif emoji=="\u274E":
+                await page.delete()
+                return
         return
 
-@bot.command(pass_context=True)
-async def t(ctx):
-    """
-    Comando para crear tags.
-
-    Usa '_t test Hola Mundo' para crear o actualizar un tag
-    Usa '_t test' para ver el contenido de un tag
-    Usa '_t test *delete' para borrar un tag
-    Usa '_t *list' para ver la lista de tags
-    """
-    cmd = re.compile(r"_t (?P<tag>\w+) ?(?P<content>.*)")
-    t = cmd.match(ctx.message.content)
-    if t:
-        if t.groupdict()["content"] == "*delete":
-            tags = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'tags':True})
-            if tags:
-                if 'tags' in tags:
-                    if t.groupdict()["tag"] in tags['tags']:
-                        db.accounts.tags.find_one_and_delete({'_id':t.groupdict()["tag"]})
-                        db.accounts.update_one({'_id':int(ctx.message.author.id)},
-                            {'$pull':{'tags':t.groupdict()["tag"]}})
-                        await ctx.send("Tag '%s' eliminado correctamente" % t.groupdict()["tag"])
-                        return
-            await ctx.send("Tu no puedes eliminar este tag")
-        elif t.groupdict()["content"]:
-            tags = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'tags':True})
-            if tags:
-                if 'tags' in tags:
-                    if t.groupdict()["tag"] in tags['tags']:
-                        db.accounts.tags.update_one(
-                            {'_id':t.groupdict()["tag"]},
-                            {"$set":{"content":t.groupdict()["content"]}}
-                        )
-                        await ctx.send("Tag '%s' actualizado correctamente" % t.groupdict()["tag"])
-                        return
-                    else:
-                        tag = db.accounts.tags.find_one({'_id':t.groupdict()["tag"]})
-                        if not(tag):
-                            db.accounts.tags.insert({'_id':t.groupdict()["tag"],
-                            'content':t.groupdict()["content"]})
-                            db.accounts.update_one({'_id':int(ctx.message.author.id)},
-                                {'$push':{'tags':t.groupdict()["tag"]}})
-                            await ctx.send("Tag '%s' creado correctamente." % t.groupdict()["tag"])
-                        else:
-                            return await ctx.send("Tu no puedes actualizar este tag")
-            else:
-                tag = db.accounts.tags.find_one({'_id':t.groupdict()["tag"]})
-                if tag:
-                    return await ctx.send("Tu no puedes actualizar este tag")
-                else:
-                    user = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'_id':True})
-                    if not(user):
-                        db.accounts.insert_one(
-                            {
-                                '_id' : int(ctx.message.author.id),
-                                'tags' : [t.groupdict()["tag"]]
-                            }
-                        )
-                    db.accounts.tags.insert({'_id':t.groupdict()["tag"],'content':t.groupdict()["content"]})
-                await ctx.send("Tag '%s' creado correctamente." % t.groupdict()["tag"])
-        else:
-            tag = db.accounts.tags.find_one({'_id':t.groupdict()["tag"]})
-            if tag:
-                await ctx.send(tag['content'])
-            else:
-                await ctx.send("No existe el tag '%s'" % t.groupdict()["tag"])
-    elif ctx.message.content.lower() == "_t *list":
-        tags = db.accounts.find_one({'_id':int(ctx.message.author.id)},{'tags':True})
-        if tags:
-            print(tags)
-            if 'tags' in tags:
-                l="```\n"
-                for el in tags['tags']:
-                    l+=el+"\n"
-                return await ctx.send(l+"```")
-        await ctx.send('No tienes ninguno')
-    else:
-        await ctx.send('Usa _help t')
+get_id = lambda ctx: int(ctx.message.author.id)
 
 #Luis Albizo 13/01/18
