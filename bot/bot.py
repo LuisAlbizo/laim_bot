@@ -1,7 +1,5 @@
-import discord, random, time, re, datetime, os, threading, math, asyncio, socket, hashlib, base64
-import pickle
+import discord, random, time, datetime, re, asyncio
 from discord.ext import commands
-from functools import reduce
 from .fortunas import fortunas
 import bot.scraper as scraper
 import bot.hchan as hchan
@@ -24,9 +22,21 @@ def segundosV(segundos):
     }
 
 #Bot
-bot = commands.Bot(command_prefix="_")
+intents = discord.Intents.default()
+intents.members = True
+bot = commands.Bot(command_prefix="_", intents=intents)
 dirbot = "./"
 init_time = None
+
+async def clean_mentions(ctx, offset=0):
+    content = ctx.message.content[offset:]
+    r = re.compile(r"<[@&](?P<id>\d+)>")
+    mention = r.search(content)
+    while mention:
+        u = await ctx.guild.fetch_member(int(mention.groupdict()["id"]))
+        content = r.sub(u.name, content, count=1)
+        mention = r.search(content)
+    return "".join(content.split("@"))
 
 @bot.event
 async def on_ready():
@@ -57,17 +67,17 @@ async def test(ctx):
 
 @bot.command(pass_context=True)
 async def echo(ctx):
-    await ctx.send(ctx.message.content[6:])
+    await ctx.send(await clean_mentions(ctx, offset=6))
     await ctx.message.delete()
 
 @bot.command(pass_context=True)
 async def quien(ctx):
     cmd = re.compile(r"_quien")
     def randomMember():
-        mem=list(ctx.message.guild.members)
+        mem=list(ctx.guild.members)
         return mem[random.randint(0,len(mem)-1)]
     m=""
-    for el in cmd.split(ctx.message.content+" "):
+    for el in cmd.split(await clean_mentions(ctx)+" "):
         if el:
             m=m+randomMember().name+el
     await ctx.send(m)
@@ -78,7 +88,8 @@ async def siono(ctx):
 
 @bot.command(pass_context=True)
 async def escoje(ctx):
-    await ctx.send("Yo creo que " + random.choice(ctx.message.content.split(" ")[1:]))
+    newc = await clean_mentions(ctx)
+    await ctx.send("Yo creo que " + random.choice(newc.split(" ")[1:]))
 
 @bot.command(pass_context=True)
 async def fortuna(ctx):
@@ -308,7 +319,5 @@ async def hispa(ctx):
                 await page.delete()
                 return
         return
-
-get_id = lambda ctx: int(ctx.message.author.id)
 
 #Luis Albizo 13/01/18
