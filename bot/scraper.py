@@ -57,6 +57,8 @@ def get_threads(board_page):
     threads={}
     soup=bs(r.get(board_page).content, "html.parser")
     board=actual_url
+    if board[-2] in "0123456789":
+        board = board[:-2]
     tdb=soup.findAll("div",{"class":"thread"})
     i=1
     for el in tdb:

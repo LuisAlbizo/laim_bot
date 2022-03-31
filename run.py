@@ -1,5 +1,6 @@
 from bot.bot import bot
 
-TOKEN = "TOKEN"
+TOKEN = "ODEwMjc1MzkzMDYzODc4NjY2.YChRww.90WW9IBJBZqjgxDBo8klAfDZIVg"
 
 bot.run(TOKEN)
+

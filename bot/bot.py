@@ -128,6 +128,7 @@ async def chan(ctx):
         fm = await ctx.send(response["content"][0])
         i=1
         hilos = list(response["content"][1])
+        onebyone = True
         while True:
             el = hilos[i-1]
             page = await ctx.send(el)
@@ -136,12 +137,13 @@ async def chan(ctx):
             if i<15:
                 await page.add_reaction("\u25B6")#siguiente
             await page.add_reaction("\u2611")#seleccionar
+            await page.add_reaction("\u23FA")#mostrar todo
             await page.add_reaction("\u274E")#quitar
             try:
                 opc, user = await bot.wait_for("reaction_add",
                     check = (lambda reaction, user:
                     reaction.emoji in 
-                    ["\u25C0","\u25B6","\u2611","\u274E"] and 
+                    ["\u25C0","\u25B6","\u23FA","\u2611","\u274E"] and 
                     user == message.author),
                     timeout=15)
             except asyncio.TimeoutError:
@@ -155,6 +157,9 @@ async def chan(ctx):
             elif opc.emoji=="\u25B6":
                 i+=1
                 pass
+            elif opc.emoji=="\u23FA":
+                onebyone = False
+                break
             elif opc.emoji=="\u2611":
                 break
             elif opc.emoji=="\u274E":
@@ -167,50 +172,57 @@ async def chan(ctx):
         page = await ctx.send("loading...")
         while True:
             img = imgs[i]
-            await page.edit(content=(("image %i of %i\n" % (i+1,len(imgs)))+img))
-            if i>0:
-                await page.add_reaction("\u25C0")#anterior
-            if i<len(imgs)-1:
-                await page.add_reaction("\u25B6")#siguiente
-            await page.add_reaction("\u2611")#seleccionar
-            await page.add_reaction("\u274E")#quitar
-            try:
-                opc, user = await bot.wait_for("reaction_add", check = (
-                lambda reaction, user:
-                reaction.emoji in ["\u25C0","\u25B6","\u2611","\u274E"]
-                and user == message.author), timeout=15)
-            except asyncio.TimeoutError:
-                for emoji in ["\u25C0","\u25B6","\u2611","\u274E"]:
-                    try:
+            if onebyone:
+                await page.edit(content=(("image %i of %i\n" % (i+1,len(imgs)))+img))
+                if i>0:
+                    await page.add_reaction("\u25C0")#anterior
+                if i<len(imgs)-1:
+                    await page.add_reaction("\u25B6")#siguiente
+                await page.add_reaction("\u2611")#seleccionar
+                await page.add_reaction("\u274E")#quitar
+                try:
+                    opc, user = await bot.wait_for("reaction_add", check = (
+                    lambda reaction, user:
+                    reaction.emoji in ["\u25C0","\u25B6","\u2611","\u274E"]
+                    and user == message.author), timeout=15)
+                except asyncio.TimeoutError:
+                    for emoji in ["\u25C0","\u25B6","\u2611","\u274E"]:
+                        try:
+                            await page.remove_reaction(emoji, bot.user)
+                        except:
+                            pass
+                    return
+                emoji=opc.emoji
+                try:
+                    await page.remove_reaction(emoji,message.author)
+                except:
+                    pass
+                if emoji=="\u25C0":
+                    i=i-1
+                    if not(i):
                         await page.remove_reaction(emoji, bot.user)
-                    except:
-                        pass
-                return
-            emoji=opc.emoji
-            try:
-                await page.remove_reaction(emoji,message.author)
-            except:
-                pass
-            if emoji=="\u25C0":
-                i=i-1
-                if not(i):
-                    await page.remove_reaction(emoji, bot.user)
-                pass
-            elif emoji=="\u25B6":
-                i+=1
-                if i==len(img)-1:
-                    await page.remove_reaction(emoji, bot.user)
-                pass
-            elif emoji=="\u2611":
-                for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
-                    try:
-                        await page.remove_reaction(e, bot.user)
-                    except:
-                        pass
-                return
-            elif emoji=="\u274E":
-                await page.delete()
-                return
+                    pass
+                elif emoji=="\u25B6":
+                    i+=1
+                    if i==len(img)-1:
+                        await page.remove_reaction(emoji, bot.user)
+                    pass
+                elif emoji=="\u2611":
+                    for e in ["\u25C0","\u25B6","\u2611","\u274E"]:
+                        try:
+                            await page.remove_reaction(e, bot.user)
+                        except:
+                            pass
+                    return
+                elif emoji=="\u274E":
+                    await page.delete()
+                    return
+            else:
+                await ctx.send(("image %i of %i\n" % (i+1,len(imgs)))+img)
+                i = i + 1
+                if i == len(imgs):
+                    break
+
         return
 
 @bot.command(pass_context=True)
